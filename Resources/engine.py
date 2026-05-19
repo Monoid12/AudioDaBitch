@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.6
+# AudioDaBitch Engine 0.5.7
 from __future__ import annotations
 
 import atexit
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
 
-ENGINE_VERSION = "0.5.6"
+ENGINE_VERSION = "0.5.7"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -58,7 +58,7 @@ def ensure_audio_dependencies() -> None:
             venv.EnvBuilder(with_pip=True, clear=True).create(str(VENV_DIR))
         log("installing audio dependencies: sounddevice cffi")
         subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "sounddevice==0.5.5", "cffi"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "sounddevice==0.5.7", "cffi"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         env = os.environ.copy()
         env[BOOTSTRAP_FLAG] = "1"
         log(f"re-exec engine with venv python: {py}")

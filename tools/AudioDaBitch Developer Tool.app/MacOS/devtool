@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RES="$APP_ROOT/Resources"
+SCRIPTS="$RES/scripts"
+LOG_DIR="$HOME/Library/Logs/AudioDaBitchDeveloperTool"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/devtool_$(date +%Y%m%d_%H%M%S).log"
+choice="$(osascript <<'OSA'
+set choices to {"Patch anwenden", "Build-Check", "Release zu GitHub", "GitHub Actions öffnen", "Repo öffnen", "Logs öffnen", "Developer Tool nach /Applications installieren"}
+set picked to choose from list choices with title "AudioDaBitch Developer Tool" with prompt "Was möchtest du ausführen?" default items {"Patch anwenden"}
+if picked is false then return ""
+return item 1 of picked
+OSA
+)"
+[ -z "$choice" ] && exit 0
+case "$choice" in
+  "Patch anwenden") script="$SCRIPTS/apply_patch.sh" ;;
+  "Build-Check") script="$SCRIPTS/build_check.sh" ;;
+  "Release zu GitHub") script="$SCRIPTS/release_to_github.sh" ;;
+  "GitHub Actions öffnen") script="$SCRIPTS/open_actions.sh" ;;
+  "Repo öffnen") script="$SCRIPTS/open_repo.sh" ;;
+  "Logs öffnen") script="$SCRIPTS/open_logs.sh" ;;
+  "Developer Tool nach /Applications installieren") script="$SCRIPTS/install_devtool.sh" ;;
+  *) exit 0 ;;
+esac
+osascript <<OSA
+ tell application "Terminal"
+   activate
+   do script "echo 'AudioDaBitch Developer Tool'; echo 'Aktion: $choice'; echo 'Log: $LOG'; echo; bash '$script' 2>&1 | tee -a '$LOG'; echo; echo 'Fertig. Dieses Fenster kann geschlossen werden.'"
+ end tell
+OSA

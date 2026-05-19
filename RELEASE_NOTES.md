@@ -1,4 +1,4 @@
-# AudioDaBitch 0.5.6
+# AudioDaBitch 0.5.7
 
 Audio Quality / Changelog Fix.
 

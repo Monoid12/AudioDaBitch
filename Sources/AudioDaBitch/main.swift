@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.6"
+let ADBVersion = "0.5.7"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 
@@ -244,7 +244,7 @@ final class AppController: NSViewController {
         tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 530).isActive = true
         addTab("Audio", audioView())
         addTab("xPilot Leveler", levelerView())
-        addTab("Updates ●", updatesView())
+        addTab("🔵 Updates", updatesView())
         addTab("Changelog", textView(changeText, loadResource("CHANGELOG", fallback: fallbackChangelog())))
         addTab("Hilfe", textView(helpText, loadResource("HELP_BLACKHOLE_DE", fallback: fallbackHelp())))
         addTab("Logs", logsView())
@@ -390,7 +390,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "BlackHole Routing:\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> Kopfhörer/Audiointerface\n\nKein Multi-Output mit Kopfhörer verwenden, sonst läuft Audio am Limiter vorbei.\n\nAlle Geräte sollten in Audio-MIDI-Setup auf 48.000 Hz stehen." }
-    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.6\n- Safe-Mode Audioqualität mit 48 kHz und größerem Puffer\n- Changelog als eigener Tab\n- Hilfe sichtbar\n- Audio-Diagnose erweitert" }
+    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.7\n- Safe-Mode Audioqualität mit 48 kHz und größerem Puffer\n- Changelog als eigener Tab\n- Hilfe sichtbar\n- Audio-Diagnose erweitert" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
