@@ -1,2 +1,2 @@
 # AudioDaBitch
-Audio ducking system vor Discord/Vatsim
+Audio ducking system vor Discord/Vatsim for MacOSX
