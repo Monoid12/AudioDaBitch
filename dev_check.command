@@ -32,9 +32,11 @@ if [ ! -f build/AudioDaBitch.app/Contents/Resources/engine.py ]; then echo "FEHL
 if [ -d build/AudioDaBitch.app/Contents/Resources/engine ]; then echo "FEHLER: alter Resources/engine Ordner im Bundle"; exit 1; fi
 if [ ! -f build/AudioDaBitch.app/Contents/Resources/AudioDaBitch.icns ]; then echo "FEHLER: Icon fehlt im App-Bundle"; exit 1; fi
 if [ ! -f dist/AudioDaBitch.pkg ]; then echo "FEHLER: dist/AudioDaBitch.pkg wurde nicht gebaut"; exit 1; fi
+if [ "$(/usr/libexec/PlistBuddy -c "Print :0:BundleIsRelocatable" build/components.plist)" != "false" ]; then echo "FEHLER: PKG-Komponente ist relocatable"; exit 1; fi
 PKG_PAYLOAD="$(pkgutil --payload-files dist/AudioDaBitch.pkg)"
 if ! printf "%s\n" "$PKG_PAYLOAD" | grep -Eq '^(\./)?Applications/AudioDaBitch.app/Contents/MacOS/AudioDaBitch$'; then echo "FEHLER: PKG enthält keine Applications/AudioDaBitch.app"; exit 1; fi
 if ! printf "%s\n" "$PKG_PAYLOAD" | grep -Eq '^(\./)?Applications/AudioDaBitch.app/Contents/Resources/engine.py$'; then echo "FEHLER: PKG enthält keine Resources/engine.py"; exit 1; fi
+if printf "%s\n" "$PKG_PAYLOAD" | grep -Eq '^(\./)?Users/'; then echo "FEHLER: PKG enthält User-Pfade"; exit 1; fi
 cleanup
 echo "Swift Build und PKG: OK"
 echo

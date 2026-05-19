@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.9
+
+- PKG-Installation repariert: `AudioDaBitch.app` wird im Installer nicht mehr an alte lokale Build-Pfade relocated.
+- PKG-Build setzt `BundleIsRelocatable=false` und `BundleHasStrictIdentifier=true` für das App-Bundle.
+- Audio-Basis aus 0.5.8 bleibt unverändert: stabiler 0.5.6-Mixer mit `sounddevice==0.5.5`.
+
 ## 0.5.8
 
 - Stabile Audio-Basis aus 0.5.6 wiederhergestellt: gleicher Mixer, gleiches Panning, gleicher Safe-Mode, wieder `sounddevice==0.5.5`.

@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.8"
+let ADBVersion = "0.5.9"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -437,7 +437,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "BlackHole Routing:\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> Kopfhörer/Audiointerface\n\nKein Multi-Output mit Kopfhörer verwenden, sonst läuft Audio am Limiter vorbei.\n\nAlle Geräte sollten in Audio-MIDI-Setup auf 48.000 Hz stehen." }
-    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.8\n- Audio-Basis aus 0.5.6 wiederhergestellt\n- PKG-Installer und In-App-Update gehärtet\n- Changelog und Hilfe sichtbar gefüllt" }
+    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.9\n- PKG-Installation nach /Applications repariert\n- Audio-Basis aus 0.5.6 bleibt erhalten\n- Update- und Installer-Prüfungen bleiben aktiv" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }

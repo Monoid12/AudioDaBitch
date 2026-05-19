@@ -1,5 +1,13 @@
 # AudioDaBitch Changelog
 
+## 0.5.9
+
+Installer-Fix.
+
+- Das PKG installiert `AudioDaBitch.app` zuverlässig nach `/Applications`.
+- macOS PackageKit darf die App nicht mehr zu alten lokalen Build-Ordnern verschieben.
+- Audio-Engine bleibt auf der stabilen 0.5.8/0.5.6-Basis.
+
 ## 0.5.8
 
 Restore-/Update-/Release-Fix.
