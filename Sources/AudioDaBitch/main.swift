@@ -1,8 +1,10 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.2"
+let ADBVersion = "0.5.3"
 let controlURL = URL(string: "http://127.0.0.1:49372")!
+
+final class ADBContainerView: NSView { override var isFlipped: Bool { true } }
 
 final class MeterView: NSView {
     var levelDb: Double = -120 { didSet { needsDisplay = true } }
@@ -44,7 +46,7 @@ final class EngineManager {
 
     func cleanupStaleEngines() {
         prepareFolders()
-        if let pidString = try? String(contentsOf: pidFile).trimmingCharacters(in: .whitespacesAndNewlines), let pid = Int32(pidString), pid > 0 {
+        if let pidString = try? String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), let pid = Int32(pidString), pid > 0 {
             kill(pid, SIGTERM)
             usleep(250_000)
             if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
@@ -52,6 +54,9 @@ final class EngineManager {
         try? fm.removeItem(at: pidFile)
         _ = runShell("/usr/bin/pkill -f '/AudioDaBitch.app/.*/engine.py' || true")
         _ = runShell("/usr/bin/pkill -f 'Resources/engine.py' || true")
+        _ = runShell("/usr/sbin/lsof -tiTCP:49372 -sTCP:LISTEN | /usr/bin/xargs -r /bin/kill -TERM 2>/dev/null || true")
+        usleep(200_000)
+        _ = runShell("/usr/sbin/lsof -tiTCP:49372 -sTCP:LISTEN | /usr/bin/xargs -r /bin/kill -KILL 2>/dev/null || true")
     }
 
     func start() {
@@ -157,8 +162,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.setActivationPolicy(.regular)
         buildWindow()
         engine.start()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in self?.pollState() }
-        loadDevices()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in self?.pollState() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { self.loadDevices() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.loadDevices() }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -181,7 +187,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func buildWindow() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "AudioDaBitch \(ADBVersion)"
         window.center()
         window.delegate = self
@@ -211,8 +217,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func value(_ suffix: String, slider: NSSlider) -> NSTextField { let l = NSTextField(labelWithString: String(format: "%.1f %@", slider.doubleValue, suffix)); return l }
 
     func container(_ stack: NSStackView) -> NSView {
-        let view = NSView(); view.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(stack)
-        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 22), stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -22), stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 22), stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -22)])
+        let view = ADBContainerView(); view.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 22),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -22),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 22)
+        ])
         return view
     }
 
@@ -245,12 +255,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.addArrangedSubview(row("Zielpegel", targetLevel, value: value("dBFS", slider: targetLevel)))
         root.addArrangedSubview(row("Gate", gateLevel, value: value("dBFS", slider: gateLevel)))
         root.addArrangedSubview(row("Reaktion zu laut", fastDown, value: value("ms", slider: fastDown)))
+        root.addArrangedSubview(label("Empfehlung: Zielpegel -21 dBFS, Gate -55 dBFS, schnelle Absenkung 18 ms. Das schützt bei falsch eingestellten VATSIM-Pegeln."))
         return container(root)
     }
 
     func updatesTab() -> NSView {
         let root = vstack(); root.addArrangedSubview(label("Updates & Changelog", size: 22, bold: true)); root.addArrangedSubview(updateStatus); let b = button("Jetzt prüfen", #selector(checkUpdates)); root.addArrangedSubview(b); updateButton.target = self; updateButton.action = #selector(downloadUpdate); updateButton.isHidden = true; root.addArrangedSubview(updateButton)
-        changelogView.isEditable = false; changelogView.string = loadResourceText("CHANGELOG", fallback: "AudioDaBitch 0.5.2\n- Kompakte Oberfläche\n- Pegelanzeigen\n- stabilerer Engine-Prozess\n- besserer Update- und Release-Ablauf")
+        changelogView.isEditable = false; changelogView.string = loadResourceText("CHANGELOG", fallback: "AudioDaBitch 0.5.3\n- Build-/Installer-Cleanup\n- Engine-Version-Prüfung\n- Kompakte Oberfläche\n- Pegelanzeigen\n- stabilerer Engine-Prozess\n- besserer Update- und Release-Ablauf")
         let scroll = NSScrollView(); scroll.documentView = changelogView; scroll.hasVerticalScroller = true; scroll.widthAnchor.constraint(equalToConstant: 980).isActive = true; scroll.heightAnchor.constraint(equalToConstant: 430).isActive = true; root.addArrangedSubview(scroll); return container(root)
     }
 
@@ -263,14 +274,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let root = vstack(); root.addArrangedSubview(label("Logs & Diagnose", size: 22, bold: true)); root.addArrangedSubview(label("Log-Verzeichnis: \(engine.logsPath())")); let row1 = hstack(); row1.addArrangedSubview(button("Logs öffnen", #selector(openLogs))); row1.addArrangedSubview(button("Log-ZIP erstellen", #selector(zipLogs))); row1.addArrangedSubview(button("Hängende Prozesse beenden", #selector(killStale))); root.addArrangedSubview(row1); root.addArrangedSubview(label("Die Log-ZIP enthält keine Passwörter. Sie enthält AudioDaBitch-Logs, Setup-Ausgaben und Prozessdiagnose.")); return container(root)
     }
 
-    func loadResourceText(_ name: String, fallback: String) -> String { if let url = Bundle.main.url(forResource: name, withExtension: "md"), let text = try? String(contentsOf: url) { return text }; return fallback }
+    func loadResourceText(_ name: String, fallback: String) -> String { if let url = Bundle.main.url(forResource: name, withExtension: "md"), let text = try? String(contentsOf: url, encoding: .utf8) { return text }; return fallback }
     func fallbackHelp() -> String { "Discord Output: BlackHole 2ch\nxPilot Headset/Speaker: BlackHole 16ch\nAudioDaBitch Output: Kopfhörer oder Audiointerface\nKein Multi-Output-Gerät mit Kopfhörer verwenden, sonst läuft Audio am Limiter vorbei." }
 
     @objc func loadDevicesAction() { loadDevices() }
     func loadDevices() {
         engine.call("/devices") { data in
-            guard let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { DispatchQueue.main.async { self.status.stringValue = "Engine startet oder nicht erreichbar" }; return }
-            DispatchQueue.main.async { self.devices = json; self.populateDevices() }
+            guard let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                DispatchQueue.main.async {
+                    self.status.stringValue = "Engine nicht erreichbar - Neustart läuft"
+                    self.engine.restart()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.loadDevices() }
+                }
+                return
+            }
+            DispatchQueue.main.async { self.devices = json; self.populateDevices(); self.status.stringValue = "Engine bereit" }
         }
     }
     func populateDevices() {
@@ -351,7 +369,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func runInstallerAndQuit(pkg: URL) {
         engine.stop()
         let script = FileManager.default.temporaryDirectory.appendingPathComponent("audiodabitch_update_restart.sh")
-        let content = "#!/bin/zsh\n/usr/bin/open -W '\(pkg.path)'\nsleep 2\n/usr/bin/open -a AudioDaBitch\n"
+        let content = "#!/bin/zsh\n/usr/bin/pkill -f '/AudioDaBitch.app/.*/engine.py' 2>/dev/null || true\n/usr/bin/open -W '\(pkg.path)'\nsleep 2\n/usr/bin/open -a AudioDaBitch\n"
         try? content.write(to: script, atomically: true, encoding: .utf8)
         _ = runShell("/bin/chmod +x '\(script.path)' && /usr/bin/nohup '\(script.path)' >/tmp/audiodabitch_update.log 2>&1 &")
         NSApp.terminate(nil)

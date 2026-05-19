@@ -1,4 +1,4 @@
-# AudioDaBitch 0.5.2 - Start hier
+# AudioDaBitch 0.5.3 - Start hier
 
 1. Patch anwenden.
 2. `./dev_check.command` ausführen.

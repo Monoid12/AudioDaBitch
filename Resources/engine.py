@@ -3,6 +3,7 @@ import atexit, audioop, json, math, os, queue, signal, struct, sys, threading, t
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+ENGINE_VERSION = "0.5.3"
 PORT = 49372
 SUPPORT = Path(os.environ.get("ADB_SUPPORT", str(Path.home()/"Library/Application Support/AudioDaBitch")))
 LOG_DIR = Path(os.environ.get("ADB_LOG_DIR", str(Path.home()/"Library/Logs/AudioDaBitch")))
@@ -247,8 +248,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(devices())
         if self.path.startswith("/state"):
             with lock: snap = dict(state)
+            snap["version"] = ENGINE_VERSION
             return self._send(snap)
-        return self._send({"ok": True, "version": "0.5.2"})
+        return self._send({"ok": True, "version": ENGINE_VERSION})
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         body = self.rfile.read(length) if length else b""
@@ -270,11 +272,12 @@ class Handler(BaseHTTPRequestHandler):
         return self._send({"ok": False, "error": "unknown"}, 404)
 
 def main():
-    save_pid(); atexit.register(cleanup_pid); load_config(); log("engine start")
+    save_pid(); atexit.register(cleanup_pid); load_config(); log(f"AudioDaBitch engine {ENGINE_VERSION} starting")
     try:
         server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     except OSError as e:
         log(f"port bind failed: {e}")
+        os.system("/usr/sbin/lsof -iTCP:49372 -sTCP:LISTEN >> '%s' 2>&1" % LOG_FILE)
         raise
     def sig(_signum, _frame):
         stop_audio(); cleanup_pid(); os._exit(0)

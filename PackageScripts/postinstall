@@ -1,3 +1,5 @@
 #!/bin/bash
+set +e
+/bin/sleep 1
 /usr/bin/open -a AudioDaBitch 2>/dev/null || true
 exit 0

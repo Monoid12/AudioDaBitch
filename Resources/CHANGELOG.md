@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.2
+## 0.5.3
 - Kompakte Oberfläche für MacBook Pro 14".
 - Sichtbare Pegelanzeigen für Discord, xPilot und Output.
 - Gefüllte Hilfe-/BlackHole-Seite.
