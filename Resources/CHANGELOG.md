@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 - 2026-05-19
+## 0.5.1 - 2026-05-19
 - Stabilitaets- und Bedienbarkeits-Release.
 - Engine-Lifecycle umgebaut: alte Engine-Prozesse werden vor Start/Stop entfernt.
 - Keine GUI-Abhaengigkeit vom alten lokalen HTTP-State der 0.4.x-App.

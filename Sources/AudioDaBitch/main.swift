@@ -2,7 +2,7 @@ import Cocoa
 import Foundation
 
 let appName = "AudioDaBitch"
-let appVersion = "0.5.0"
+let appVersion = "0.5.1"
 let repoOwner = "Monoid12"
 let repoName = "AudioDaBitch"
 let updateAssetName = "AudioDaBitch.pkg"
@@ -287,17 +287,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.addArrangedSubview(row("xPilot Input", xpilotInput))
         root.addArrangedSubview(row("Output", outputPopup))
         root.addArrangedSubview(separator())
-        root.addArrangedSubview(row("Discord Gain", discordGain, valueLabel("dB", slider: discordGain)))
-        root.addArrangedSubview(row("xPilot Gain", xpilotGain, valueLabel("dB", slider: xpilotGain)))
-        root.addArrangedSubview(row("Discord Pan", discordPan, valueLabel("pan", slider: discordPan)))
-        root.addArrangedSubview(row("xPilot Pan", xpilotPan, valueLabel("pan", slider: xpilotPan)))
+        root.addArrangedSubview(row("Discord Gain", discordGain, value: valueLabel("dB", slider: discordGain)))
+        root.addArrangedSubview(row("xPilot Gain", xpilotGain, value: valueLabel("dB", slider: xpilotGain)))
+        root.addArrangedSubview(row("Discord Pan", discordPan, value: valueLabel("pan", slider: discordPan)))
+        root.addArrangedSubview(row("xPilot Pan", xpilotPan, value: valueLabel("pan", slider: xpilotPan)))
         root.addArrangedSubview(separator())
         duckingButton.target = self; duckingButton.action = #selector(controlChanged(_:)); root.addArrangedSubview(duckingButton)
         triggerPopup.addItems(withTitles: ["xPilot duckt Discord", "Discord duckt xPilot", "Aus"]); triggerPopup.target = self; triggerPopup.action = #selector(controlChanged(_:)); root.addArrangedSubview(row("Ducking-Modus", triggerPopup))
-        root.addArrangedSubview(row("Trigger Threshold", thresholdSlider, valueLabel("dB", slider: thresholdSlider)))
-        root.addArrangedSubview(row("Ducking-Tiefe", duckDepthSlider, valueLabel("dB", slider: duckDepthSlider)))
-        root.addArrangedSubview(row("Master Gain", masterSlider, valueLabel("dB", slider: masterSlider)))
-        root.addArrangedSubview(row("Limiter Ceiling", ceilingSlider, valueLabel("dB", slider: ceilingSlider)))
+        root.addArrangedSubview(row("Trigger Threshold", thresholdSlider, value: valueLabel("dB", slider: thresholdSlider)))
+        root.addArrangedSubview(row("Ducking-Tiefe", duckDepthSlider, value: valueLabel("dB", slider: duckDepthSlider)))
+        root.addArrangedSubview(row("Master Gain", masterSlider, value: valueLabel("dB", slider: masterSlider)))
+        root.addArrangedSubview(row("Limiter Ceiling", ceilingSlider, value: valueLabel("dB", slider: ceilingSlider)))
         root.addArrangedSubview(separator())
         let btnRow = stack(.horizontal); btnRow.addArrangedSubview(button("Geraete laden", action: #selector(loadDevicesAction))); btnRow.addArrangedSubview(button("Audio starten", action: #selector(startAudio))); btnRow.addArrangedSubview(button("Audio stoppen", action: #selector(stopAudio))); btnRow.addArrangedSubview(button("Engine neu starten", action: #selector(restartAudio))); root.addArrangedSubview(btnRow)
         root.addArrangedSubview(statusLabel)
@@ -315,10 +315,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.addArrangedSubview(label("xPilot Auto-Leveler / AGC", bold: true))
         root.addArrangedSubview(label("Der Leveler reagiert schnell nach unten, wenn eine VATSIM-Station viel zu laut ist, und hebt leise Stationen kontrolliert an. Ein Gate verhindert, dass Stille und Rauschen hochgezogen werden."))
         agcButton.target = self; agcButton.action = #selector(controlChanged(_:)); root.addArrangedSubview(agcButton)
-        root.addArrangedSubview(row("Zielpegel", targetSlider, valueLabel("dBFS", slider: targetSlider)))
-        root.addArrangedSubview(row("Gate", gateSlider, valueLabel("dBFS", slider: gateSlider)))
-        root.addArrangedSubview(row("Zu laut: Reaktion", fastDownSlider, valueLabel("ms", slider: fastDownSlider)))
-        root.addArrangedSubview(row("Zu leise: Reaktion", fastUpSlider, valueLabel("ms", slider: fastUpSlider)))
+        root.addArrangedSubview(row("Zielpegel", targetSlider, value: valueLabel("dBFS", slider: targetSlider)))
+        root.addArrangedSubview(row("Gate", gateSlider, value: valueLabel("dBFS", slider: gateSlider)))
+        root.addArrangedSubview(row("Zu laut: Reaktion", fastDownSlider, value: valueLabel("ms", slider: fastDownSlider)))
+        root.addArrangedSubview(row("Zu leise: Reaktion", fastUpSlider, value: valueLabel("ms", slider: fastUpSlider)))
         root.addArrangedSubview(label("Empfehlung: Zielpegel -21 dBFS, Gate -55 dBFS, Abwaerts 18 ms, Aufwaerts 130 ms."))
         for s in [targetSlider, gateSlider, fastDownSlider, fastUpSlider] { s.target = self; s.action = #selector(controlChanged(_:)) }
         applyConfigToControls()

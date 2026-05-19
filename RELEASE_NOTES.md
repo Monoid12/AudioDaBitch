@@ -2,7 +2,7 @@
 
 Alle relevanten Aenderungen an AudioDaBitch werden in dieser Datei dokumentiert. Die App zeigt diese Datei lokal an und ergaenzt sie um die Release Notes des neuesten GitHub Releases.
 
-## [0.5.0] - 2026-05-19
+## [0.5.1] - 2026-05-19
 
 ### Added
 
