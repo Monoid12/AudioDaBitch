@@ -4,52 +4,26 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-release:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Resolve version
-        shell: bash
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "VERSION=${{ github.ref_name }}" | sed 's/VERSION=v/VERSION=/' >> "$GITHUB_ENV"
-          else
-            echo "VERSION=0.5.0" >> "$GITHUB_ENV"
-          fi
-
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - name: Build app and pkg
-        shell: bash
-        run: |
-          VERSION="$VERSION" ./scripts/build_pkg.sh
-
-      - name: Create release notes from CHANGELOG
-        shell: bash
-        run: |
-          python3 scripts/extract_changelog.py > RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "## Assets" >> RELEASE_NOTES.md
-          echo "- AudioDaBitch.pkg" >> RELEASE_NOTES.md
-          echo "- AudioDaBitch.zip" >> RELEASE_NOTES.md
-          echo "- AudioDaBitch.streamDeckPlugin" >> RELEASE_NOTES.md
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          TAG="${{ github.ref_name }}"
-          if [[ "$TAG" == "" || "$TAG" == "main" ]]; then TAG="v$VERSION"; fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-            gh release edit "$TAG" --notes-file RELEASE_NOTES.md --title "AudioDaBitch $TAG"
-          else
-            gh release create "$TAG" dist/* --title "AudioDaBitch $TAG" --notes-file RELEASE_NOTES.md
-          fi
+        run: VERSION="$VERSION" ./scripts/build_pkg.sh
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AudioDaBitch v${{ env.VERSION }}
+          tag_name: v${{ env.VERSION }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/AudioDaBitch.pkg
+            dist/AudioDaBitch.app.zip
+            dist/SHA256SUMS.txt

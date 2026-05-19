@@ -1,451 +1,288 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-import argparse, json, math, os, signal, sys, threading, time, traceback
+import atexit, audioop, json, math, os, queue, signal, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
-from urllib.parse import parse_qs, urlparse
 
-EPS = 1e-12
-DEFAULT_SR = 48000
-DEFAULT_BLOCK = 512
-CONTROL_HOST = "127.0.0.1"
-CONTROL_PORT = 49342
-running = True
-state_lock = threading.RLock()
-engine_ref = None
+PORT = 49372
+SUPPORT = Path(os.environ.get("ADB_SUPPORT", str(Path.home()/"Library/Application Support/AudioDaBitch")))
+LOG_DIR = Path(os.environ.get("ADB_LOG_DIR", str(Path.home()/"Library/Logs/AudioDaBitch")))
+SUPPORT.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+PID_FILE = SUPPORT / "engine.pid"
+LOG_FILE = LOG_DIR / "engine.log"
+CONFIG_FILE = SUPPORT / "config.json"
 
-levels_state = {
-    "running": False,
-    "status": "Bereit",
-    "rms": [0.0, 0.0],
-    "peak": [0.0, 0.0],
-    "duck_db": 0.0,
-    "limiter_db": 0.0,
-    "xpilot_agc_gain_db": 0.0,
-    "updated_at": 0.0,
+try:
+    import sounddevice as sd
+except Exception as e:
+    sd = None
+    SOUNDDEVICE_ERROR = repr(e)
+else:
+    SOUNDDEVICE_ERROR = ""
+
+state = {"running": False, "levels": {"discord": -120.0, "xpilot": -120.0, "output": -120.0}, "error": ""}
+config = {
+    "discordDevice": -1, "xpilotDevice": -1, "outputDevice": -1,
+    "discordGainDb": 0.0, "xpilotGainDb": 0.0, "discordPan": -0.8, "xpilotPan": 0.8,
+    "masterGainDb": 0.0, "duckingDepthDb": -12.0, "targetDb": -21.0, "gateDb": -55.0, "fastDownMs": 18.0
 }
+streams = []
+queues = {"discord": queue.Queue(maxsize=4), "xpilot": queue.Queue(maxsize=4)}
+lock = threading.RLock()
+last_active = time.time()
 
-def db_to_lin(db: float) -> float:
-    return float(10.0 ** (float(db) / 20.0))
+def log(msg):
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + str(msg) + "\n")
 
-def lin_to_db(x: float) -> float:
-    return float(20.0 * math.log10(max(float(x), EPS)))
+def save_pid():
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
-def pan_gains(pan: float) -> Tuple[float, float]:
-    p = max(-1.0, min(1.0, float(pan)))
-    angle = (p + 1.0) * math.pi / 4.0
-    return float(math.cos(angle)), float(math.sin(angle))
-
-def clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, float(v)))
-
-def set_status(msg: str) -> None:
-    with state_lock:
-        levels_state["status"] = str(msg)
-        levels_state["updated_at"] = time.time()
-
-def write_json_atomic(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-def read_json(path: Path, fallback: dict | None = None) -> dict:
+def cleanup_pid():
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        if PID_FILE.exists() and PID_FILE.read_text().strip() == str(os.getpid()):
+            PID_FILE.unlink()
     except Exception:
-        return {} if fallback is None else fallback
+        pass
 
-def hostapi_name(sd, idx: int) -> str:
-    try:
-        return str(sd.query_hostapis()[idx].get("name", "HostAPI"))
-    except Exception:
-        return "HostAPI"
+def db_to_gain(db): return 10.0 ** (float(db) / 20.0)
+def gain_to_db(g): return -120.0 if g <= 1e-9 else 20.0 * math.log10(max(1e-9, g))
 
-def list_devices() -> int:
-    try:
-        import sounddevice as sd
-        inputs = []
-        outputs = []
-        for i, dev in enumerate(sd.query_devices()):
-            name = str(dev.get("name", "Unbenannt"))
-            api = hostapi_name(sd, int(dev.get("hostapi", 0)))
-            max_in = int(dev.get("max_input_channels", 0) or 0)
-            max_out = int(dev.get("max_output_channels", 0) or 0)
-            sr = float(dev.get("default_samplerate", DEFAULT_SR) or DEFAULT_SR)
-            if max_in > 0:
-                inputs.append({"index": i, "name": name, "channels": max_in, "hostapi": api, "default_sr": sr})
-            if max_out > 0:
-                outputs.append({"index": i, "name": name, "channels": max_out, "hostapi": api, "default_sr": sr})
-        default = sd.default.device
-        print(json.dumps({"ok": True, "inputs": inputs, "outputs": outputs, "default_input": default[0], "default_output": default[1]}, ensure_ascii=False))
-        return 0
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": repr(exc)}, ensure_ascii=False))
-        return 1
+def rms_db(samples):
+    if not samples: return -120.0
+    s = 0.0
+    n = 0
+    for x in samples:
+        s += x * x
+        n += 1
+    return gain_to_db(math.sqrt(s / max(1, n)))
 
-def fit(block, frames, np):
-    if block is None or getattr(block, "size", 0) == 0:
-        return np.zeros(frames, dtype=np.float32)
-    if block.shape[0] == frames:
-        return block.astype(np.float32, copy=False)
-    out = np.zeros(frames, dtype=np.float32)
-    if block.shape[0] > frames:
-        out[:] = block[-frames:].astype(np.float32, copy=False)
-    else:
-        out[: block.shape[0]] = block.astype(np.float32, copy=False)
+def bytes_to_floats(data):
+    if not data: return []
+    count = len(data) // 4
+    return list(struct.unpack("<" + "f" * count, data[:count*4]))
+
+def floats_to_bytes(values):
+    if not values: return b""
+    return struct.pack("<" + "f" * len(values), *values)
+
+def stereo_from_raw(raw, channels, frames, selected=(1,2)):
+    vals = bytes_to_floats(raw)
+    if channels < 1 or not vals:
+        return [0.0] * (frames * 2)
+    out = []
+    ch0 = max(0, min(channels-1, selected[0]-1))
+    ch1 = max(0, min(channels-1, selected[1]-1 if len(selected) > 1 else ch0))
+    total_frames = min(frames, len(vals)//channels)
+    for i in range(total_frames):
+        base = i * channels
+        out.append(vals[base + ch0])
+        out.append(vals[base + ch1])
+    while len(out) < frames * 2:
+        out.append(0.0)
+    return out[:frames*2]
+
+def pan_stereo(stereo, pan):
+    pan = max(-1.0, min(1.0, float(pan)))
+    angle = (pan + 1.0) * math.pi / 4.0
+    lg = math.cos(angle)
+    rg = math.sin(angle)
+    out = []
+    for i in range(0, len(stereo), 2):
+        mono = 0.5 * (stereo[i] + stereo[i+1])
+        out.append(mono * lg)
+        out.append(mono * rg)
     return out
 
-def normalize_channels(src: dict) -> List[int]:
-    if "channels" in src and isinstance(src.get("channels"), list) and src.get("channels"):
-        return [max(0, int(x)) for x in src.get("channels", [0])]
-    ch = max(0, int(src.get("channel", 0)))
-    return [ch]
+def apply_gain(stereo, db):
+    g = db_to_gain(db)
+    return [x * g for x in stereo]
 
-class Engine:
-    def __init__(self, cfg: dict, config_path: Path, level_path: Path):
-        import numpy as np
-        import sounddevice as sd
-        self.np = np
-        self.sd = sd
-        self.cfg = cfg
-        self.config_path = config_path
-        self.level_path = level_path
-        self.config_mtime = self._mtime(config_path)
-        self.sample_rate = int(cfg.get("sample_rate", DEFAULT_SR))
-        self.block_size = int(cfg.get("block_size", DEFAULT_BLOCK))
-        self.blocks = [np.zeros(self.block_size, dtype=np.float32), np.zeros(self.block_size, dtype=np.float32)]
-        self.rms = [0.0, 0.0]
-        self.peak = [0.0, 0.0]
-        self.duck_gain = 1.0
-        self.limiter_gain = 1.0
-        self.xpilot_agc_gain_db = 0.0
-        self.streams = []
-        self.last_reload_check = 0.0
+def clamp(stereo):
+    return [max(-1.0, min(1.0, x)) for x in stereo]
 
-    def _mtime(self, path: Path) -> float:
+def current_config():
+    with lock:
+        return dict(config)
+
+def load_config():
+    global config
+    if CONFIG_FILE.exists():
         try:
-            return path.stat().st_mtime
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                config.update(data)
+        except Exception as e:
+            log(f"config load failed: {e}")
+
+def save_config():
+    try:
+        CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    except Exception as e:
+        log(f"config save failed: {e}")
+
+def input_callback(name, channels):
+    def cb(indata, frames, time_info, status):
+        if status: log(f"{name} status {status}")
+        raw = bytes(indata)
+        q = queues[name]
+        try:
+            while q.qsize() >= 3:
+                q.get_nowait()
         except Exception:
-            return 0.0
+            pass
+        try: q.put_nowait((raw, channels, frames))
+        except queue.Full: pass
+    return cb
 
-    def reload_config_if_needed(self, force: bool = False) -> None:
-        now = time.monotonic()
-        if not force and now - self.last_reload_check < 0.10:
-            return
-        self.last_reload_check = now
-        mt = self._mtime(self.config_path)
-        if force or (mt and mt != self.config_mtime):
-            cfg = read_json(self.config_path, self.cfg)
-            if isinstance(cfg, dict) and cfg.get("inputs"):
-                self.cfg = cfg
-                self.config_mtime = mt
+def get_frame(name, frames):
+    try:
+        raw, channels, got_frames = queues[name].get_nowait()
+    except queue.Empty:
+        return [0.0] * (frames * 2)
+    return stereo_from_raw(raw, channels, frames)
 
-    def save_config(self) -> None:
-        write_json_atomic(self.config_path, self.cfg)
-        self.config_mtime = self._mtime(self.config_path)
+def output_callback(outdata, frames, time_info, status):
+    cfg = current_config()
+    discord = pan_stereo(apply_gain(get_frame("discord", frames), cfg.get("discordGainDb", 0)), cfg.get("discordPan", -0.8))
+    xpilot = pan_stereo(apply_gain(get_frame("xpilot", frames), cfg.get("xpilotGainDb", 0)), cfg.get("xpilotPan", 0.8))
+    xdb = rms_db(xpilot)
+    target = float(cfg.get("targetDb", -21.0))
+    gate = float(cfg.get("gateDb", -55.0))
+    if xdb > gate:
+        diff = target - xdb
+        diff = max(-18.0, min(12.0, diff))
+        xpilot = apply_gain(xpilot, diff)
+    ddb = rms_db(discord)
+    if xdb > float(cfg.get("gateDb", -55.0)) and ddb > -70:
+        discord = apply_gain(discord, float(cfg.get("duckingDepthDb", -12.0)))
+    mix = []
+    mg = db_to_gain(cfg.get("masterGainDb", 0.0))
+    peak = 0.0
+    for a, b in zip(discord, xpilot):
+        v = (a + b) * mg
+        peak = max(peak, abs(v))
+        mix.append(v)
+    if peak > db_to_gain(-1.0):
+        reduction = db_to_gain(-1.0) / peak
+        mix = [x * reduction for x in mix]
+    mix = clamp(mix)
+    outdata[:] = floats_to_bytes(mix)
+    with lock:
+        state["levels"] = {"discord": rms_db(discord), "xpilot": rms_db(xpilot), "output": rms_db(mix)}
 
-    def apply_patch(self, patch: dict) -> dict:
-        with state_lock:
-            cfg = json.loads(json.dumps(self.cfg))
-            for key, value in patch.items():
-                if key == "ducking":
-                    cfg["ducking"] = bool(value)
-                elif key == "xpilot_agc_enabled":
-                    cfg.setdefault("xpilot_agc", {})["enabled"] = bool(value)
-                elif key == "xpilot_gain_delta_db":
-                    cfg["inputs"][1]["gain_db"] = clamp(float(cfg["inputs"][1].get("gain_db", 0.0)) + float(value), -24, 24)
-                elif key == "master_gain_delta_db":
-                    cfg["master_gain_db"] = clamp(float(cfg.get("master_gain_db", 0.0)) + float(value), -24, 12)
-                elif key == "duck_depth_delta_db":
-                    cfg["duck_depth_db"] = clamp(float(cfg.get("duck_depth_db", 18.0)) + float(value), 0, 40)
-                elif key == "xpilot_target_delta_db":
-                    agc = cfg.setdefault("xpilot_agc", {})
-                    agc["target_db"] = clamp(float(agc.get("target_db", -21.0)) + float(value), -32, -12)
-                elif key in ["xpilot_gain_db", "discord_gain_db"]:
-                    idx = 1 if key.startswith("xpilot") else 0
-                    cfg["inputs"][idx]["gain_db"] = clamp(float(value), -24, 24)
-                elif key in ["master_gain_db", "duck_depth_db", "threshold_db"]:
-                    cfg[key] = float(value)
-            self.cfg = cfg
-            self.save_config()
-            return cfg
+def devices():
+    if sd is None:
+        return []
+    out = []
+    try:
+        for idx, d in enumerate(sd.query_devices()):
+            out.append({"id": idx, "name": d.get("name", f"Device {idx}"), "max_input_channels": int(d.get("max_input_channels", 0)), "max_output_channels": int(d.get("max_output_channels", 0))})
+    except Exception as e:
+        log(f"devices failed: {e}")
+    return out
 
-    def start(self):
-        cfg = self.cfg
-        inputs = cfg.get("inputs", [])[:2]
-        bydev: Dict[int, List[Tuple[int, List[int]]]] = {}
-        for bus, src in enumerate(inputs):
-            dev = src.get("device_index")
-            if dev is None:
-                raise RuntimeError("Input fuer %s fehlt." % src.get("name", bus))
-            chans = normalize_channels(src)
-            bydev.setdefault(int(dev), []).append((bus, chans))
-        if cfg.get("output_index") is None:
-            raise RuntimeError("Output fehlt.")
-        for dev, maps in bydev.items():
-            channels = max(max(chs) for _, chs in maps) + 1
-            stream = self.sd.InputStream(device=dev, samplerate=self.sample_rate, blocksize=self.block_size, channels=channels, dtype="float32", latency="low", callback=self.input_callback(dev, maps))
-            stream.start()
-            self.streams.append(stream)
-        out = self.sd.OutputStream(device=int(cfg.get("output_index")), samplerate=self.sample_rate, blocksize=self.block_size, channels=2, dtype="float32", latency="low", callback=self.output_callback)
-        out.start()
-        self.streams.append(out)
-        with state_lock:
-            levels_state["running"] = True
-            levels_state["status"] = "Audio laeuft"
-            levels_state["updated_at"] = time.time()
-
-    def stop(self):
-        for s in list(self.streams):
-            try: s.stop()
-            except Exception: pass
-            try: s.close()
-            except Exception: pass
-        self.streams = []
-        with state_lock:
-            levels_state["running"] = False
-            levels_state["status"] = "Gestoppt"
-            levels_state["updated_at"] = time.time()
-
-    def input_callback(self, dev, maps):
-        def cb(indata, frames, time_info, status):
-            if status:
-                set_status("Input %s: %s" % (dev, status))
-            with state_lock:
-                for bus, chans in maps:
-                    available = [ch for ch in chans if ch < indata.shape[1]]
-                    if available:
-                        data = indata[:, available].astype(self.np.float32, copy=True)
-                        block = data.mean(axis=1) if data.ndim == 2 else data
-                    else:
-                        block = self.np.zeros(frames, dtype=self.np.float32)
-                    self.blocks[bus] = block
-                    pk = float(self.np.max(self.np.abs(block))) if block.size else 0.0
-                    rms = float(self.np.sqrt(self.np.mean(self.np.square(block)))) if block.size else 0.0
-                    self.peak[bus] = max(pk, self.peak[bus] * 0.86)
-                    self.rms[bus] = 0.78 * self.rms[bus] + 0.22 * rms
-                    levels_state["rms"] = list(self.rms)
-                    levels_state["peak"] = list(self.peak)
-                    levels_state["updated_at"] = time.time()
-        return cb
-
-    def apply_xpilot_agc(self, mono, frames: int, cfg: dict):
-        np = self.np
-        agc = cfg.get("xpilot_agc", {}) or {}
-        if not bool(agc.get("enabled", True)):
-            self.xpilot_agc_gain_db += (0.0 - self.xpilot_agc_gain_db) * 0.02
-            return mono * db_to_lin(self.xpilot_agc_gain_db)
-        rms = float(np.sqrt(np.mean(np.square(mono)))) if mono.size else 0.0
-        peak = float(np.max(np.abs(mono))) if mono.size else 0.0
-        rms_db = lin_to_db(rms)
-        peak_db = lin_to_db(peak)
-        target_db = float(agc.get("target_db", -21.0))
-        gate_db = float(agc.get("gate_db", -55.0))
-        min_gain = float(agc.get("min_gain_db", -14.0))
-        max_gain = float(agc.get("max_gain_db", 14.0))
-        peak_target_db = float(agc.get("peak_guard_db", -3.0))
-        if rms_db < gate_db:
-            desired = 0.0
-            tau_ms = float(agc.get("idle_release_ms", 900.0))
-        else:
-            desired = clamp(target_db - rms_db, min_gain, max_gain)
-            if peak_db + desired > peak_target_db:
-                desired = min(desired, peak_target_db - peak_db)
-            tau_ms = float(agc.get("fast_down_ms", 18.0)) if desired < self.xpilot_agc_gain_db else float(agc.get("fast_up_ms", 130.0))
-        dt = max(frames / max(float(self.sample_rate), 1.0), 0.0001)
-        coeff = math.exp(-dt / max(tau_ms / 1000.0, 0.001))
-        self.xpilot_agc_gain_db = float(desired + (self.xpilot_agc_gain_db - desired) * coeff)
-        with state_lock:
-            levels_state["xpilot_agc_gain_db"] = self.xpilot_agc_gain_db
-        return mono * db_to_lin(self.xpilot_agc_gain_db)
-
-    def output_callback(self, outdata, frames, time_info, status):
-        np = self.np
-        if status:
-            set_status("Output: %s" % status)
+def stop_audio():
+    global streams
+    with lock:
+        state["running"] = False
+    for s in streams:
+        try: s.stop(); s.close()
+        except Exception: pass
+    streams = []
+    for q in queues.values():
         try:
-            self.reload_config_if_needed()
-            with state_lock:
-                cfg = json.loads(json.dumps(self.cfg))
-                blocks = [fit(self.blocks[i], frames, np).copy() for i in range(2)]
-                old_duck = float(self.duck_gain)
-                old_lim = float(self.limiter_gain)
-            trig = int(cfg.get("trigger", 1))
-            trig = 1 if trig != 0 else 0
-            ducking = bool(cfg.get("ducking", True))
-            target_duck = 1.0
-            if ducking:
-                rms = float(np.sqrt(np.mean(np.square(blocks[trig])))) if blocks[trig].size else 0.0
-                if lin_to_db(rms) >= float(cfg.get("threshold_db", -35.0)):
-                    target_duck = db_to_lin(-abs(float(cfg.get("duck_depth_db", 18.0))))
-            dt = max(frames / max(float(self.sample_rate), 1.0), 0.0001)
-            tau_ms = float(cfg.get("attack_ms", 20.0)) if target_duck < old_duck else float(cfg.get("release_ms", 350.0))
-            coeff = math.exp(-dt / max(tau_ms / 1000.0, 0.001))
-            duck_gain = float(target_duck + (old_duck - target_duck) * coeff)
-            mix = np.zeros((frames, 2), dtype=np.float32)
-            for i, src in enumerate(cfg.get("inputs", [])[:2]):
-                mono = blocks[i] * db_to_lin(float(src.get("gain_db", 0.0)))
-                if i == 1:
-                    mono = self.apply_xpilot_agc(mono, frames, cfg)
-                if ducking and i != trig:
-                    mono = mono * duck_gain
-                l, r = pan_gains(float(src.get("pan", -1.0 if i == 0 else 1.0)))
-                mix[:, 0] += mono * l
-                mix[:, 1] += mono * r
-            mix *= db_to_lin(float(cfg.get("master_gain_db", 0.0)))
-            ceiling = db_to_lin(float(cfg.get("limiter_ceiling_db", -1.0)))
-            pk = float(np.max(np.abs(mix))) if mix.size else 0.0
-            target_lim = min(1.0, ceiling / pk) if pk > ceiling and pk > EPS else 1.0
-            if target_lim < old_lim:
-                lim_gain = target_lim
-            else:
-                lim_gain = float(target_lim + (old_lim - target_lim) * math.exp(-dt / 0.08))
-                lim_gain = min(1.0, lim_gain)
-            mix *= lim_gain
-            outdata[:] = np.clip(mix, -1.0, 1.0)
-            with state_lock:
-                self.duck_gain = duck_gain
-                self.limiter_gain = lim_gain
-                levels_state["duck_db"] = lin_to_db(duck_gain)
-                levels_state["limiter_db"] = lin_to_db(lim_gain)
-                levels_state["updated_at"] = time.time()
-        except Exception as exc:
-            set_status("Audio Callback Fehler: %r" % exc)
-            outdata[:] = self.np.zeros((frames, 2), dtype=self.np.float32)
+            while True: q.get_nowait()
+        except queue.Empty:
+            pass
 
-class ControlHandler(BaseHTTPRequestHandler):
-    server_version = "AudioDaBitchControl/0.5"
-    def log_message(self, fmt, *args):
-        return
-    def _send(self, code: int, data: Any) -> None:
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+def start_audio():
+    global streams
+    if sd is None:
+        with lock: state["error"] = "sounddevice nicht verfügbar: " + SOUNDDEVICE_ERROR
+        return False
+    stop_audio()
+    cfg = current_config()
+    try:
+        sr = 48000
+        bs = 512
+        dd = int(cfg.get("discordDevice", -1)); xd = int(cfg.get("xpilotDevice", -1)); od = int(cfg.get("outputDevice", -1))
+        if dd >= 0:
+            channels = max(2, int(sd.query_devices(dd).get("max_input_channels", 2)))
+            streams.append(sd.RawInputStream(device=dd, channels=channels, samplerate=sr, blocksize=bs, dtype="float32", callback=input_callback("discord", channels)))
+        if xd >= 0:
+            channels = max(2, int(sd.query_devices(xd).get("max_input_channels", 2)))
+            streams.append(sd.RawInputStream(device=xd, channels=channels, samplerate=sr, blocksize=bs, dtype="float32", callback=input_callback("xpilot", channels)))
+        if od < 0:
+            raise RuntimeError("Bitte Output auswählen")
+        streams.append(sd.RawOutputStream(device=od, channels=2, samplerate=sr, blocksize=bs, dtype="float32", callback=output_callback))
+        for s in streams: s.start()
+        with lock:
+            state["running"] = True; state["error"] = ""
+        return True
+    except Exception as e:
+        log(f"start_audio failed: {e}")
+        with lock: state["error"] = str(e); state["running"] = False
+        stop_audio()
+        return False
+
+def test_pan():
+    # Non-blocking short test: if no audio stream is active, just mark levels briefly.
+    with lock:
+        state["levels"] = {"discord": -6.0, "xpilot": -6.0, "output": -6.0}
+    return True
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, obj, code=200):
+        body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+    def log_message(self, fmt, *args):
+        return
     def do_GET(self):
-        global engine_ref
-        parsed = urlparse(self.path)
-        if parsed.path == "/api/status":
-            with state_lock:
-                data = dict(levels_state)
-                data["config"] = engine_ref.cfg if engine_ref else None
-            self._send(200, {"ok": True, **data})
-            return
-        if parsed.path == "/api/config":
-            self._send(200, {"ok": True, "config": engine_ref.cfg if engine_ref else None})
-            return
-        if parsed.path == "/api/adjust":
-            qs = parse_qs(parsed.query)
-            patch = {}
-            param = qs.get("param", [""])[0]
-            delta = float(qs.get("delta", ["0"])[0] or 0)
-            value = qs.get("value", [None])[0]
-            if param == "xpilot_gain": patch["xpilot_gain_delta_db"] = delta
-            elif param == "master_gain": patch["master_gain_delta_db"] = delta
-            elif param == "duck_depth": patch["duck_depth_delta_db"] = delta
-            elif param == "xpilot_target": patch["xpilot_target_delta_db"] = delta
-            elif param == "ducking": patch["ducking"] = str(value).lower() in ["1", "true", "yes", "on"]
-            elif param == "xpilot_agc": patch["xpilot_agc_enabled"] = str(value).lower() in ["1", "true", "yes", "on"]
-            if engine_ref and patch:
-                cfg = engine_ref.apply_patch(patch)
-                self._send(200, {"ok": True, "config": cfg})
-            else:
-                self._send(400, {"ok": False, "error": "unknown parameter"})
-            return
-        self._send(404, {"ok": False, "error": "not found"})
+        if self.path.startswith("/devices"):
+            return self._send(devices())
+        if self.path.startswith("/state"):
+            with lock: snap = dict(state)
+            return self._send(snap)
+        return self._send({"ok": True, "version": "0.5.2"})
     def do_POST(self):
-        global engine_ref
-        if self.path not in ["/api/adjust", "/api/config"]:
-            self._send(404, {"ok": False, "error": "not found"})
-            return
-        length = int(self.headers.get("content-length", "0") or 0)
-        try:
-            data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        except Exception:
-            data = {}
-        if not engine_ref:
-            self._send(503, {"ok": False, "error": "engine not running"})
-            return
-        cfg = engine_ref.apply_patch(data)
-        self._send(200, {"ok": True, "config": cfg})
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(length) if length else b""
+        if self.path.startswith("/config"):
+            try:
+                data = json.loads(body.decode("utf-8")) if body else {}
+                with lock: config.update(data); save_config()
+                return self._send({"ok": True})
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 400)
+        if self.path.startswith("/start"):
+            return self._send({"ok": start_audio()})
+        if self.path.startswith("/audio_stop"):
+            stop_audio(); return self._send({"ok": True})
+        if self.path.startswith("/test_pan"):
+            return self._send({"ok": test_pan()})
+        if self.path.startswith("/stop"):
+            stop_audio(); self._send({"ok": True}); threading.Thread(target=lambda: (time.sleep(0.2), os._exit(0)), daemon=True).start(); return
+        return self._send({"ok": False, "error": "unknown"}, 404)
 
-def start_control_server():
+def main():
+    save_pid(); atexit.register(cleanup_pid); load_config(); log("engine start")
     try:
-        server = ThreadingHTTPServer((CONTROL_HOST, CONTROL_PORT), ControlHandler)
-        th = threading.Thread(target=server.serve_forever, daemon=True)
-        th.start()
-        return server
-    except Exception as exc:
-        set_status("Control API nicht gestartet: %r" % exc)
-        return None
-
-def writer_thread(path: Path):
-    while running:
-        with state_lock:
-            data = dict(levels_state)
-        try:
-            write_json_atomic(path, data)
-        except Exception:
-            pass
-        time.sleep(0.10)
-
-def run_engine(config_path: Path, level_path: Path, pid_path: Path) -> int:
-    global running, engine_ref
-    def handle(sig, frame):
-        global running
-        running = False
-    signal.signal(signal.SIGTERM, handle)
-    signal.signal(signal.SIGINT, handle)
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_path.write_text(str(os.getpid()), encoding="utf-8")
-    server = None
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError as e:
+        log(f"port bind failed: {e}")
+        raise
+    def sig(_signum, _frame):
+        stop_audio(); cleanup_pid(); os._exit(0)
+    signal.signal(signal.SIGTERM, sig); signal.signal(signal.SIGINT, sig)
     try:
-        cfg = read_json(config_path, {})
-        th = threading.Thread(target=writer_thread, args=(level_path,), daemon=True)
-        th.start()
-        eng = Engine(cfg, config_path, level_path)
-        engine_ref = eng
-        server = start_control_server()
-        eng.start()
-        while running:
-            time.sleep(0.1)
-        eng.stop()
-        return 0
-    except Exception as exc:
-        with state_lock:
-            levels_state["running"] = False
-            levels_state["status"] = "Fehler: %r" % exc
-            levels_state["updated_at"] = time.time()
-        try:
-            write_json_atomic(level_path, dict(levels_state))
-        except Exception:
-            pass
-        traceback.print_exc()
-        return 1
+        server.serve_forever(poll_interval=0.5)
     finally:
-        if server:
-            try: server.shutdown()
-            except Exception: pass
-        try:
-            pid_path.unlink()
-        except Exception:
-            pass
+        stop_audio(); cleanup_pid(); log("engine stop")
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--list-devices", action="store_true")
-    ap.add_argument("--run", nargs=3, metavar=("CONFIG", "LEVELS", "PID"))
-    args = ap.parse_args()
-    if args.list_devices:
-        return list_devices()
-    if args.run:
-        return run_engine(Path(args.run[0]), Path(args.run[1]), Path(args.run[2]))
-    print("usage: engine.py --list-devices | --run CONFIG LEVELS PID", file=sys.stderr)
-    return 2
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

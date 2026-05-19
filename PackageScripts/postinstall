@@ -1,16 +1,3 @@
 #!/bin/bash
-set -u
-LOG_DIR="/Library/Logs/AudioDaBitch"
-LOG_FILE="$LOG_DIR/install.log"
-mkdir -p "$LOG_DIR"
-{
-  echo "---- $(date) AudioDaBitch postinstall ----"
-  if [ -d "/Applications/AudioDaBitch.app" ]; then
-    echo "AudioDaBitch.app wurde nach /Applications installiert."
-    /usr/bin/defaults read "/Applications/AudioDaBitch.app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true
-  else
-    echo "WARNUNG: /Applications/AudioDaBitch.app wurde nicht gefunden."
-  fi
-  echo "Installation abgeschlossen."
-} >> "$LOG_FILE" 2>&1
+/usr/bin/open -a AudioDaBitch 2>/dev/null || true
 exit 0

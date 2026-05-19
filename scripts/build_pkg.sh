@@ -1,21 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.5.0}"
+VERSION="${VERSION:-$(cat "$ROOT/VERSION")}" 
 APP_PATH="$($ROOT/scripts/build_app.sh)"
-DIST="$ROOT/dist"
 PKGROOT="$ROOT/build/pkgroot"
-rm -rf "$DIST" "$PKGROOT"
-mkdir -p "$DIST" "$PKGROOT/Applications"
-cp -R "$APP_PATH" "$PKGROOT/Applications/"
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "build_pkg.sh muss auf macOS laufen." >&2
-  exit 2
+SCRIPTS="$ROOT/PackageScripts"
+mkdir -p "$PKGROOT/Applications" "$SCRIPTS" "$ROOT/dist"
+rm -rf "$PKGROOT/Applications/AudioDaBitch.app"
+cp -R "$APP_PATH" "$PKGROOT/Applications/AudioDaBitch.app"
+if [ ! -f "$SCRIPTS/preinstall" ]; then
+cat > "$SCRIPTS/preinstall" <<'SH'
+#!/bin/bash
+/usr/bin/pkill -f '/AudioDaBitch.app/.*/engine.py' 2>/dev/null || true
+/usr/bin/pkill -f 'Resources/engine.py' 2>/dev/null || true
+exit 0
+SH
+chmod +x "$SCRIPTS/preinstall"
 fi
-pkgbuild --root "$PKGROOT" --scripts "$ROOT/PackageScripts" --install-location "/" --identifier "com.micheldamhorst.audiodabitch.pkg" --version "$VERSION" "$DIST/AudioDaBitch.pkg"
-( cd "$(dirname "$APP_PATH")" && ditto -c -k --sequesterRsrc --keepParent "AudioDaBitch.app" "$DIST/AudioDaBitch.zip" )
-if [ -d "$ROOT/streamdeck/com.micheldamhorst.audiodabitch.sdPlugin" ]; then
-  ( cd "$ROOT/streamdeck" && zip -qr "$DIST/AudioDaBitch.streamDeckPlugin" "com.micheldamhorst.audiodabitch.sdPlugin" )
+if [ ! -f "$SCRIPTS/postinstall" ]; then
+cat > "$SCRIPTS/postinstall" <<'SH'
+#!/bin/bash
+/usr/bin/open -a AudioDaBitch 2>/dev/null || true
+exit 0
+SH
+chmod +x "$SCRIPTS/postinstall"
 fi
-( cd "$DIST" && shasum -a 256 * > SHA256SUMS.txt )
-echo "$DIST"
+/usr/bin/pkgbuild --root "$PKGROOT" --scripts "$SCRIPTS" --identifier com.micheldamhorst.audiodabitch --version "$VERSION" --install-location / "$ROOT/dist/AudioDaBitch.pkg"
+(cd "$ROOT/dist" && /usr/bin/zip -qry AudioDaBitch.app.zip ../build/AudioDaBitch.app)
+(cd "$ROOT/dist" && /usr/bin/shasum -a 256 AudioDaBitch.pkg AudioDaBitch.app.zip > SHA256SUMS.txt)

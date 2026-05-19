@@ -1,34 +1,29 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
 echo "AudioDaBitch Dev Check"
 echo "======================"
-VERSION="$(cat VERSION 2>/dev/null || echo unknown)"
-echo "Version: $VERSION"
+echo "Version: $(cat VERSION)"
 echo
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Git Status:"
-  git status --short
-  echo
-fi
 if find . -type d -name "__pycache__" -not -path "./.git/*" | grep -q .; then
   echo "WARNUNG: __pycache__ Ordner gefunden. Bitte entfernen."
 fi
-
 if find . -name "*.pyc" -not -path "./.git/*" | grep -q .; then
   echo "WARNUNG: .pyc Dateien gefunden. Bitte entfernen."
 fi
+echo "Git Status:"
+git status --short || true
+echo
 python3 -m py_compile Resources/engine.py
 echo "Python Engine: OK"
-bash -n Resources/adbctl.sh
-bash -n scripts/build_app.sh
-bash -n scripts/build_pkg.sh
-bash -n release.command
+for f in $(find . -name "*.sh" -o -name "*.command"); do bash -n "$f"; done
 echo "Shell Scripts: OK"
 if command -v swiftc >/dev/null 2>&1; then
-  swiftc -parse Sources/AudioDaBitch/main.swift >/dev/null 2>&1 && echo "Swift Syntax: OK" || echo "Swift Syntax: WARNUNG/Fehler - bitte GitHub Actions pruefen"
+  mkdir -p /tmp/audiodabitch-check
+  swiftc Sources/AudioDaBitch/main.swift -o /tmp/audiodabitch-check/AudioDaBitchCheck -framework Cocoa
+  echo "Swift Build: OK"
 else
-  echo "Swift Syntax: uebersprungen, swiftc nicht gefunden"
+  echo "Swift Build: UEBERSPRUNGEN - swiftc nicht gefunden"
 fi
 echo
 echo "Dev Check fertig."
