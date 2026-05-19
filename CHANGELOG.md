@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4 - Engine architecture hotfix
+
+- Entfernt die NumPy-Abhängigkeit aus der Audio-Engine.
+- Nutzt sounddevice RawStreams, damit keine x86_64 NumPy-Wheels auf Apple Silicon geladen werden.
+- Bootstrap entfernt alte virtuelle Umgebungen mit stale NumPy-Installation automatisch.
+- Behebt den Fall, dass die GUI startet, aber die Engine nicht erreichbar bleibt und die Output-Liste leer ist.
+
 ## [0.4.3] - 2026-05-19
 
 ### Added

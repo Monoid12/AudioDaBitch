@@ -3,7 +3,7 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
-let ADBAppVersion = "0.4.3"
+let ADBAppVersion = "0.4.4"
 let ADBRepoOwner = "Monoid12"
 let ADBRepoName = "AudioDaBitch"
 let ADBControlPort = 49372
@@ -128,7 +128,7 @@ final class AppLog {
 }
 
 @MainActor
-final class AppState: NSObject, ObservableObject {
+final class AppState: ObservableObject {
     @Published var config: AudioConfig = .defaults
     @Published var devices: [AudioDeviceInfo] = []
     @Published var engineState = EngineState(ok: false, message: "Engine startet...", running: false, discordRmsDb: -120, xpilotRmsDb: -120, outputPeakDb: -120, xpilotAutoGainDb: 0, duckGainDb: 0, limiterGainDb: 0)
@@ -151,18 +151,16 @@ final class AppState: NSObject, ObservableObject {
         AppLog.shared.write("AudioDaBitch \(ADBAppVersion) started")
         loadBundledText()
         startEngineIfNeeded()
-        stateTimer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(refreshEngineStateTimerFired), userInfo: nil, repeats: true)
+        stateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fetchState()
+                self?.fetchDevices()
+            }
+        }
         checkForUpdates()
-        updateTimer = Timer.scheduledTimer(timeInterval: 60 * 30, target: self, selector: #selector(updateTimerFired), userInfo: nil, repeats: true)
-    }
-
-    @objc private func refreshEngineStateTimerFired() {
-        fetchState()
-        fetchDevices()
-    }
-
-    @objc private func updateTimerFired() {
-        checkForUpdates()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 60 * 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkForUpdates() }
+        }
     }
 
     func loadBundledText() {
@@ -301,13 +299,12 @@ final class AppState: NSObject, ObservableObject {
 
     func downloadAndOpenUpdate() {
         guard let url = URL(string: updateAssetURL) else { return }
-        let versionForFilename = latestVersion.isEmpty ? ADBAppVersion : latestVersion
         updateStatus = "Lade Update von GitHub..."
         URLSession.shared.downloadTask(with: url) { temp, _, error in
             if let error = error { DispatchQueue.main.async { self.updateStatus = "Download fehlgeschlagen: \(error.localizedDescription)" }; return }
             guard let temp = temp else { return }
             let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-            let dest = downloads.appendingPathComponent("AudioDaBitch_\(versionForFilename).pkg")
+            let dest = downloads.appendingPathComponent("AudioDaBitch_\(self.latestVersion).pkg")
             try? FileManager.default.removeItem(at: dest)
             do {
                 try FileManager.default.copyItem(at: temp, to: dest)
@@ -316,7 +313,7 @@ final class AppState: NSObject, ObservableObject {
         }.resume()
     }
 
-    nonisolated static func compareVersions(_ a: String, _ b: String) -> ComparisonResult {
+    static func compareVersions(_ a: String, _ b: String) -> ComparisonResult {
         let aa = a.split(separator: ".").map { Int($0) ?? 0 }; let bb = b.split(separator: ".").map { Int($0) ?? 0 }
         for i in 0..<max(aa.count, bb.count) { let x = i < aa.count ? aa[i] : 0; let y = i < bb.count ? bb[i] : 0; if x > y { return .orderedDescending }; if x < y { return .orderedAscending } }
         return .orderedSame
