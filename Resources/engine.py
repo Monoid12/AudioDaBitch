@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.7
+# AudioDaBitch Engine 0.5.8
 from __future__ import annotations
 
 import atexit
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
 
-ENGINE_VERSION = "0.5.7"
+ENGINE_VERSION = "0.5.8"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -58,7 +58,7 @@ def ensure_audio_dependencies() -> None:
             venv.EnvBuilder(with_pip=True, clear=True).create(str(VENV_DIR))
         log("installing audio dependencies: sounddevice cffi")
         subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "sounddevice==0.5.7", "cffi"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        subprocess.check_call([str(py), "-m", "pip", "install", "--upgrade", "sounddevice==0.5.5", "cffi"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         env = os.environ.copy()
         env[BOOTSTRAP_FLAG] = "1"
         log(f"re-exec engine with venv python: {py}")
@@ -361,6 +361,23 @@ class AudioEngine:
         return {"sampleRate": self.sample_rate, "blockSize": self.block_size, "latency": str(self.latency), "callbackErrors": self.callback_errors, "discord": self.buffers["discord"].diagnostics(), "xpilot": self.buffers["xpilot"].diagnostics(), "lastError": self.last_error}
 
 ENGINE = AudioEngine()
+HTTPD: ThreadingHTTPServer | None = None
+
+
+def request_shutdown() -> None:
+    global HTTPD
+    log("shutdown requested")
+    if HTTPD is not None:
+        threading.Thread(target=HTTPD.shutdown, daemon=True).start()
+
+
+def handle_signal(signum, frame) -> None:
+    log(f"signal {signum} received")
+    request_shutdown()
+
+
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -417,23 +434,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"ok": True})
         elif self.path.startswith("/shutdown"):
             self._send({"ok": True})
-            threading.Thread(target=lambda: (time.sleep(0.2), os.kill(os.getpid(), signal.SIGTERM)), daemon=True).start()
+            threading.Thread(target=lambda: (time.sleep(0.2), request_shutdown()), daemon=True).start()
         else:
             self._send({"ok": False, "error": "not found"}, 404)
 
 
 def main() -> int:
+    global HTTPD
     save_pid()
     atexit.register(cleanup_pid)
     load_config()
     log(f"AudioDaBitch engine {ENGINE_VERSION} starting pid={os.getpid()} python={sys.executable}")
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-        server.serve_forever(poll_interval=0.5)
+        HTTPD = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        HTTPD.serve_forever(poll_interval=0.5)
     except OSError as e:
         log(f"server failed: {e!r}")
         return 2
     finally:
+        if HTTPD is not None:
+            HTTPD.server_close()
         ENGINE.stop()
         cleanup_pid()
     return 0

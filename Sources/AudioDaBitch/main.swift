@@ -1,9 +1,12 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.7"
+let ADBVersion = "0.5.8"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
+let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
+let ADBReleasePageURL = URL(string: "https://github.com/Monoid12/AudioDaBitch/releases")!
+let ADBUpdateAssetName = "AudioDaBitch.pkg"
 
 func appSupportDir() -> URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/AudioDaBitch", isDirectory: true) }
 func logDir() -> URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/AudioDaBitch", isDirectory: true) }
@@ -14,7 +17,7 @@ func log(_ message: String) {
     let url = logDir().appendingPathComponent("app.log")
     guard let data = "[\(nowISO())] \(message)\n".data(using: .utf8) else { return }
     if FileManager.default.fileExists(atPath: url.path), let handle = try? FileHandle(forWritingTo: url) {
-        try? handle.seekToEnd()
+        _ = try? handle.seekToEnd()
         try? handle.write(contentsOf: data)
         try? handle.close()
     } else {
@@ -28,6 +31,25 @@ struct HealthResponse: Codable { let ok: Bool; let version: String?; let soundde
 struct Meters: Codable { let discord: Double?; let xpilot: Double?; let output: Double? }
 struct Diagnostics: Codable { let sampleRate: Int?; let blockSize: Int?; let latency: String?; let callbackErrors: Int?; let lastError: String? }
 struct StateResponse: Codable { let ok: Bool; let version: String?; let running: Bool?; let meters: Meters?; let levelerGainDb: Double?; let diagnostics: Diagnostics? }
+struct GitHubAsset: Codable { let name: String; let browserDownloadURL: String; enum CodingKeys: String, CodingKey { case name; case browserDownloadURL = "browser_download_url" } }
+struct GitHubRelease: Codable { let tagName: String; let htmlURL: String?; let assets: [GitHubAsset]; enum CodingKeys: String, CodingKey { case tagName = "tag_name"; case htmlURL = "html_url"; case assets } }
+
+func normalizedVersion(_ text: String) -> [Int] {
+    let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "^v", with: "", options: .regularExpression)
+    return cleaned.split(separator: ".").map { Int($0.filter { $0.isNumber }) ?? 0 }
+}
+
+func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
+    let left = normalizedVersion(lhs)
+    let right = normalizedVersion(rhs)
+    let count = max(left.count, right.count)
+    for idx in 0..<count {
+        let a = idx < left.count ? left[idx] : 0
+        let b = idx < right.count ? right[idx] : 0
+        if a != b { return a > b }
+    }
+    return false
+}
 
 final class EngineManager {
     static let shared = EngineManager()
@@ -76,9 +98,17 @@ final class EngineManager {
     func stop() {
         post("/shutdown", body: [:]) { _ in }
         if let process, process.isRunning {
-            process.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.7) {
-                if process.isRunning { process.terminate() }
+            usleep(300_000)
+            let deadline = Date().addingTimeInterval(1.2)
+            while process.isRunning && Date() < deadline {
+                usleep(100_000)
+            }
+            if process.isRunning {
+                process.terminate()
+                usleep(300_000)
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
             }
         }
         process = nil
@@ -195,8 +225,12 @@ final class AppController: NSViewController {
     let deviceError = NSTextField(labelWithString: "")
     let levelerInfo = NSTextField(labelWithString: "")
     let updateStatus = NSTextField(labelWithString: "Installiert: \(ADBVersion)")
+    let updateButton = NSButton(title: "Update installieren", target: nil, action: nil)
     let helpText = NSTextView()
     let changeText = NSTextView()
+    var updateTabItem: NSTabViewItem?
+    var latestRelease: GitHubRelease?
+    var latestAssetURL: URL?
     var timer: Timer?
 
     override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1000, height: 640)) }
@@ -206,6 +240,7 @@ final class AppController: NSViewController {
         buildUI()
         EngineManager.shared.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.refreshAll() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.checkForUpdates(silent: true) }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in self.pollState() }
     }
 
@@ -244,7 +279,7 @@ final class AppController: NSViewController {
         tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 530).isActive = true
         addTab("Audio", audioView())
         addTab("xPilot Leveler", levelerView())
-        addTab("🔵 Updates", updatesView())
+        updateTabItem = addTab("Updates", updatesView())
         addTab("Changelog", textView(changeText, loadResource("CHANGELOG", fallback: fallbackChangelog())))
         addTab("Hilfe", textView(helpText, loadResource("HELP_BLACKHOLE_DE", fallback: fallbackHelp())))
         addTab("Logs", logsView())
@@ -261,11 +296,13 @@ final class AppController: NSViewController {
         xpilot.pan.doubleValue = 1
     }
 
-    func addTab(_ name: String, _ view: NSView) {
+    @discardableResult
+    func addTab(_ name: String, _ view: NSView) -> NSTabViewItem {
         let item = NSTabViewItem(identifier: name)
         item.label = name
         item.view = view
         tabs.addTabViewItem(item)
+        return item
     }
 
     func button(_ title: String, _ action: Selector) -> NSButton {
@@ -341,10 +378,20 @@ final class AppController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18)
         ])
-        updateStatus.stringValue = "Installiert: \(ADBVersion). Der Update-Tab wird mit Punkt markiert, sobald ein neueres GitHub-Release erkannt wird."
-        updateStatus.textColor = .systemBlue
+        updateStatus.stringValue = "Installiert: \(ADBVersion)."
+        updateStatus.textColor = .secondaryLabelColor
         stack.addArrangedSubview(updateStatus)
-        stack.addArrangedSubview(button("Jetzt auf GitHub prüfen", #selector(openReleases)))
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.addArrangedSubview(button("Jetzt auf GitHub prüfen", #selector(checkUpdatesClicked)))
+        updateButton.target = self
+        updateButton.action = #selector(installUpdateClicked)
+        updateButton.bezelStyle = .rounded
+        updateButton.isEnabled = false
+        row.addArrangedSubview(updateButton)
+        row.addArrangedSubview(button("Release-Seite öffnen", #selector(openReleases)))
+        stack.addArrangedSubview(row)
         stack.addArrangedSubview(textView(NSTextView(), loadResource("CHANGELOG", fallback: fallbackChangelog())))
         return view
     }
@@ -390,17 +437,131 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "BlackHole Routing:\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> Kopfhörer/Audiointerface\n\nKein Multi-Output mit Kopfhörer verwenden, sonst läuft Audio am Limiter vorbei.\n\nAlle Geräte sollten in Audio-MIDI-Setup auf 48.000 Hz stehen." }
-    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.7\n- Safe-Mode Audioqualität mit 48 kHz und größerem Puffer\n- Changelog als eigener Tab\n- Hilfe sichtbar\n- Audio-Diagnose erweitert" }
+    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.8\n- Audio-Basis aus 0.5.6 wiederhergestellt\n- PKG-Installer und In-App-Update gehärtet\n- Changelog und Hilfe sichtbar gefüllt" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
     @objc func stopAudio() { EngineManager.shared.post("/stop", body: [:]) { _ in } }
     @objc func repairEngine() { EngineManager.shared.stop(); EngineManager.shared.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.refreshAll() } }
     @objc func stabilizeAudio() { EngineManager.shared.post("/config", body: ["safeMode": true, "sampleRate": 48000, "blockSize": 1024, "latency": "high"]) { _ in EngineManager.shared.post("/stop", body: [:]) { _ in EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } } } }
-    @objc func openReleases() { NSWorkspace.shared.open(URL(string: "https://github.com/Monoid12/AudioDaBitch/releases")!) }
+    @objc func checkUpdatesClicked() { checkForUpdates(silent: false) }
+    @objc func installUpdateClicked() { installUpdate() }
+    @objc func openReleases() { NSWorkspace.shared.open(ADBReleasePageURL) }
     @objc func openLogs() { ensureDir(logDir()); NSWorkspace.shared.open(logDir()) }
     @objc func exportLogs() { ensureDir(logDir()); let dest = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/AudioDaBitch_Logs_\(Int(Date().timeIntervalSince1970)).zip"); _ = EngineManager.shared.shell("/usr/bin/zip", ["-r", dest.path, logDir().path, appSupportDir().path]); NSWorkspace.shared.activateFileViewerSelecting([dest]) }
     @objc func killStale() { EngineManager.shared.cleanupStale(); status.stringValue = "Hängende Prozesse bereinigt" }
+
+    func setUpdateBadge(_ enabled: Bool) {
+        updateTabItem?.label = enabled ? "🔵 Updates" : "Updates"
+        updateStatus.textColor = enabled ? .systemBlue : .secondaryLabelColor
+        updateButton.isEnabled = enabled
+    }
+
+    func checkForUpdates(silent: Bool) {
+        if !silent {
+            updateStatus.stringValue = "Suche nach neuem Release..."
+            updateStatus.textColor = .secondaryLabelColor
+        }
+        var request = URLRequest(url: ADBLatestReleaseURL)
+        request.setValue("AudioDaBitch/\(ADBVersion)", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            DispatchQueue.main.async {
+                if let error {
+                    if !silent {
+                        self.updateStatus.stringValue = "Update-Prüfung fehlgeschlagen: \(error.localizedDescription)"
+                    }
+                    self.setUpdateBadge(false)
+                    return
+                }
+                guard let data, let release = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
+                    if !silent { self.updateStatus.stringValue = "GitHub-Release konnte nicht gelesen werden." }
+                    self.setUpdateBadge(false)
+                    return
+                }
+                self.latestRelease = release
+                let version = release.tagName.replacingOccurrences(of: "^v", with: "", options: .regularExpression)
+                guard isVersion(version, newerThan: ADBVersion) else {
+                    self.latestAssetURL = nil
+                    self.updateStatus.stringValue = "Installiert: \(ADBVersion). Kein neueres Release gefunden."
+                    self.setUpdateBadge(false)
+                    return
+                }
+                guard let asset = release.assets.first(where: { $0.name == ADBUpdateAssetName }), let url = URL(string: asset.browserDownloadURL) else {
+                    self.latestAssetURL = nil
+                    self.updateStatus.stringValue = "Release \(release.tagName) gefunden, aber \(ADBUpdateAssetName) fehlt."
+                    self.setUpdateBadge(false)
+                    return
+                }
+                self.latestAssetURL = url
+                self.updateStatus.stringValue = "Update verfügbar: \(release.tagName)."
+                self.setUpdateBadge(true)
+            }
+        }.resume()
+    }
+
+    func installUpdate() {
+        guard let assetURL = latestAssetURL else {
+            checkForUpdates(silent: false)
+            return
+        }
+        updateButton.isEnabled = false
+        updateStatus.stringValue = "Download läuft..."
+        let updateDir = appSupportDir().appendingPathComponent("Updates", isDirectory: true)
+        ensureDir(updateDir)
+        let version = latestRelease?.tagName ?? "latest"
+        let destination = updateDir.appendingPathComponent("AudioDaBitch-\(version).pkg")
+        URLSession.shared.downloadTask(with: assetURL) { tempURL, _, error in
+            if let error {
+                DispatchQueue.main.async {
+                    self.updateStatus.stringValue = "Download fehlgeschlagen: \(error.localizedDescription)"
+                    self.updateButton.isEnabled = true
+                }
+                return
+            }
+            guard let tempURL else {
+                DispatchQueue.main.async {
+                    self.updateStatus.stringValue = "Download fehlgeschlagen: keine Datei erhalten."
+                    self.updateButton.isEnabled = true
+                }
+                return
+            }
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: tempURL, to: destination)
+                DispatchQueue.main.async { self.startInstallerAndQuit(pkgURL: destination) }
+            } catch {
+                DispatchQueue.main.async {
+                    self.updateStatus.stringValue = "Download konnte nicht gespeichert werden: \(error.localizedDescription)"
+                    self.updateButton.isEnabled = true
+                }
+            }
+        }.resume()
+    }
+
+    func startInstallerAndQuit(pkgURL: URL) {
+        updateStatus.stringValue = "Engine wird gestoppt, Installer startet..."
+        EngineManager.shared.stop()
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/bin/bash")
+        helper.arguments = ["-lc", """
+pkg="$1"
+/bin/sleep 1
+/usr/bin/open "$pkg"
+/bin/sleep 2
+while /usr/bin/pgrep -x Installer >/dev/null 2>&1; do /bin/sleep 2; done
+/bin/sleep 1
+if [ -d "/Applications/AudioDaBitch.app" ]; then
+  /usr/bin/open -a "/Applications/AudioDaBitch.app"
+fi
+""", "audiodabitch-updater", pkgURL.path]
+        do {
+            try helper.run()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApp.terminate(nil) }
+        } catch {
+            updateStatus.stringValue = "Installer konnte nicht gestartet werden: \(error.localizedDescription)"
+            updateButton.isEnabled = true
+        }
+    }
 
     func refreshAll() { pollHealth(); fetchDevices(); pollState() }
 

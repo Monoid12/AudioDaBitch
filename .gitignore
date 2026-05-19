@@ -7,23 +7,3 @@ __pycache__/
 *.zip
 *.pkg
 *.tar.gz
-
-# Local build/cache artifacts
-build/
-dist/
-*.pyc
-__pycache__/
-.DS_Store
-
-# AudioDaBitch local artifacts
-build/
-dist/
-*.pyc
-__pycache__/
-.DS_Store
-# AudioDaBitch local artifacts
-build/
-dist/
-*.pyc
-__pycache__/
-.DS_Store

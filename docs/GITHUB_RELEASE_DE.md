@@ -13,8 +13,8 @@ Der Assistent erledigt:
 3. Changelog-Eintrag vorbereiten.
 4. Dev-Check starten.
 5. Commit erstellen.
-6. Main pushen.
-7. Tag `vX.Y.Z` erstellen.
+6. Separat fragen, bevor `main` gepusht wird.
+7. Separat fragen, bevor Tag `vX.Y.Z` erstellt und gepusht wird.
 8. GitHub Actions Build starten.
 
 Voraussetzungen:
@@ -24,4 +24,4 @@ brew install gh
 gh auth login
 ```
 
-GitHub Actions erstellt dann `AudioDaBitch.pkg`, `AudioDaBitch.zip`, Stream-Deck-Plugin und `SHA256SUMS.txt`.
+GitHub Actions erstellt dann `AudioDaBitch.pkg`, `AudioDaBitch.app.zip` und `SHA256SUMS.txt`.

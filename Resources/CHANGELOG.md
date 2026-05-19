@@ -1,35 +1,27 @@
 # AudioDaBitch Changelog
 
-## 0.5.7
+## 0.5.8
+
+Restore-/Update-/Release-Fix.
+
+- Audio-Engine bleibt auf der stabilen 0.5.6-Basis.
+- `sounddevice` wird wieder mit der funktionierenden Version 0.5.5 gebootstrapped.
+- `/shutdown` beendet die Engine sauber und räumt die PID-Datei auf.
+- Update-Tab prüft GitHub Releases von `Monoid12/AudioDaBitch`.
+- Bei neuer Version erscheint ein blauer Update-Badge und der Button „Update installieren“.
+- Das Update lädt `AudioDaBitch.pkg`, stoppt die Engine, startet den Installer und öffnet danach die neue App.
+- PKG-Build und `postinstall` prüfen, ob `/Applications/AudioDaBitch.app` wirklich installiert wird.
+- Hilfe und Changelog bleiben als eigene, helle Textbereiche sichtbar gefüllt.
+- Das experimentelle Developer Tool wurde entfernt; Releases laufen über `release.command`.
+
+## 0.5.6
 
 Audioqualität / Stabilität / Changelog-Fix.
 
-- Neuer Safe-Mode für stabilere Ausgabe: 48 kHz, größerer Audio-Puffer und hohe Latenz als Standard.
+- Safe-Mode für stabilere Ausgabe: 48 kHz, größerer Audio-Puffer und hohe Latenz als Standard.
 - Ringbuffer zwischen Input- und Output-Streams, damit kurze Timing-Schwankungen weniger stottern.
 - Audio-Diagnose im Hauptfenster: Sample Rate, Blockgröße, Latenz und Callback-Fehler.
 - Button „Audio stabilisieren“ setzt sichere Audio-Parameter und startet Audio neu.
-- Changelog ist wieder ein eigener sichtbarer Tab.
-- Hilfe bleibt sichtbar und nutzt eine helle TextView im Dark Mode.
-- Log-ZIP bleibt im Logs-Tab verfügbar.
-
-## 0.5.7
-
-- sounddevice/cffi werden lokal automatisch eingerichtet.
-- Audio-Geräte werden wieder von der Engine geliefert.
-- App-Icon wurde wieder eingebunden.
-- Log-ZIP Button wurde wieder eingebaut.
-
-## 0.5.7
-
-- Drei-Blöcke-Layout für Discord, xPilot und Output.
-- Erste sichtbare Pegelanzeigen.
-
-## 0.5.7
-
-- Installer-Cleanup gegen alte Engine-Dateien.
-- GUI/Engine-Version-Check.
-
-## 0.5.7
-
-- Erste kompaktere GUI.
-- Erste Prozess-Cleanup-Verbesserungen.
+- Changelog als eigener sichtbarer Tab.
+- Hilfe/BlackHole-Routing sichtbar gefüllt.
+- Log-ZIP im Logs-Tab.
