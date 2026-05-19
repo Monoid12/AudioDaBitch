@@ -1,9 +1,9 @@
-name: build-release
+name: Release AudioDaBitch
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -11,34 +11,45 @@ permissions:
 
 jobs:
   build-release:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build unsigned app and pkg
-        run: bash Scripts/build_release.sh
-
-      - name: Prepare release notes
+      - name: Resolve version
+        shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME:-manual}"
-          bash Scripts/extract_changelog.sh "$TAG" > dist/GITHUB_RELEASE_NOTES.md
-          if [ ! -s dist/GITHUB_RELEASE_NOTES.md ]; then
-            cp dist/RELEASE_NOTES.md dist/GITHUB_RELEASE_NOTES.md
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "VERSION=${{ github.ref_name }}" | sed 's/VERSION=v/VERSION=/' >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.5.0" >> "$GITHUB_ENV"
           fi
 
-      - name: Create or update GitHub Release
+      - name: Build app and pkg
+        shell: bash
+        run: |
+          VERSION="$VERSION" ./scripts/build_pkg.sh
+
+      - name: Create release notes from CHANGELOG
+        shell: bash
+        run: |
+          python3 scripts/extract_changelog.py > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Assets" >> RELEASE_NOTES.md
+          echo "- AudioDaBitch.pkg" >> RELEASE_NOTES.md
+          echo "- AudioDaBitch.zip" >> RELEASE_NOTES.md
+          echo "- AudioDaBitch.streamDeckPlugin" >> RELEASE_NOTES.md
+
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME:-v$(cat VERSION)}"
-          gh release view "$TAG" >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
-          if [ "$EXISTS" = "1" ]; then
-            gh release upload "$TAG" dist/AudioDaBitch.pkg dist/AudioDaBitch.zip dist/AudioDaBitch.streamDeckPlugin.zip dist/SHA256SUMS.txt --clobber
-            gh release edit "$TAG" --notes-file dist/GITHUB_RELEASE_NOTES.md --title "AudioDaBitch $TAG"
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == "" || "$TAG" == "main" ]]; then TAG="v$VERSION"; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file RELEASE_NOTES.md --title "AudioDaBitch $TAG"
           else
-            gh release create "$TAG" dist/AudioDaBitch.pkg dist/AudioDaBitch.zip dist/AudioDaBitch.streamDeckPlugin.zip dist/SHA256SUMS.txt --title "AudioDaBitch $TAG" --notes-file dist/GITHUB_RELEASE_NOTES.md
+            gh release create "$TAG" dist/* --title "AudioDaBitch $TAG" --notes-file RELEASE_NOTES.md
           fi

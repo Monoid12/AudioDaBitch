@@ -1,0 +1,63 @@
+{
+  "Author": "Michel Damhorst",
+  "Name": "AudioDaBitch",
+  "Description": "Control AudioDaBitch ducking, xPilot leveler and gains.",
+  "URL": "https://github.com/Monoid12/AudioDaBitch",
+  "Version": "0.5.0.0",
+  "UUID": "com.micheldamhorst.audiodabitch",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.5"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12.0"
+    }
+  ],
+  "CodePath": "plugin.js",
+  "PropertyInspectorPath": "ui/property_inspector.html",
+  "Icon": "imgs/list",
+  "Actions": [
+    {
+      "UUID": "com.micheldamhorst.audiodabitch.key.adjust",
+      "Name": "ADB Adjust",
+      "Tooltip": "Adjust AudioDaBitch parameters",
+      "Icon": "imgs/list",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/action",
+          "Title": "ADB"
+        }
+      ]
+    },
+    {
+      "UUID": "com.micheldamhorst.audiodabitch.encoder.adjust",
+      "Name": "ADB Dial Adjust",
+      "Tooltip": "Adjust AudioDaBitch parameters with Stream Deck + dials",
+      "Icon": "imgs/list",
+      "Controllers": [
+        "Encoder"
+      ],
+      "Encoder": {
+        "Icon": "imgs/encoder",
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Rotate": "Adjust selected parameter",
+          "Push": "Toggle selected function",
+          "Touch": "Show value",
+          "LongTouch": "Reset"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/action",
+          "Title": "ADB"
+        }
+      ]
+    }
+  ]
+}

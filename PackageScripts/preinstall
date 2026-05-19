@@ -1,0 +1,12 @@
+#!/bin/bash
+set -u
+LOG_DIR="/Library/Logs/AudioDaBitch"
+LOG_FILE="$LOG_DIR/install.log"
+mkdir -p "$LOG_DIR"
+{
+  echo "---- $(date) AudioDaBitch preinstall ----"
+  echo "Entferne alte AudioDaBitch.app, falls vorhanden."
+} >> "$LOG_FILE" 2>&1
+rm -rf "/Applications/AudioDaBitch.app" >> "$LOG_FILE" 2>&1 || true
+rm -rf "/Applications/GamingAudioLimiter.app" >> "$LOG_FILE" 2>&1 || true
+exit 0
