@@ -1,10 +1,10 @@
-# AudioDaBitch 0.5.5
+# AudioDaBitch 0.5.6
 
-Dependency / Devices / UI / Icon Fix.
+Audio Quality / Changelog Fix.
 
-- sounddevice/cffi werden lokal automatisch eingerichtet.
-- Inputs/Outputs werden wieder aus der Engine geliefert.
-- Hilfe und Changelog sind sichtbar.
-- Log-ZIP Button ist wieder vorhanden.
-- App-Icon wird im Build geprüft.
-- xPilot Leveler ist verständlicher erklärt.
+- Safe-Mode mit 48 kHz, Blockgröße 1024 und hoher Latenz als stabiler Standard.
+- Ringbuffer zwischen Inputs und Output gegen kurze Timing-Aussetzer.
+- Button „Audio stabilisieren“.
+- Changelog ist eigener sichtbarer Tab.
+- Hilfe sichtbar und gefüllt.
+- Audio-Diagnose im Hauptfenster.

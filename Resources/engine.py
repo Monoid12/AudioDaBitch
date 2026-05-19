@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.5
+# AudioDaBitch Engine 0.5.6
 from __future__ import annotations
 
 import atexit
@@ -9,17 +9,17 @@ import math
 import os
 import queue
 import signal
-import socket
 import subprocess
 import sys
 import threading
 import time
 import venv
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-ENGINE_VERSION = "0.5.5"
+ENGINE_VERSION = "0.5.6"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -36,16 +36,14 @@ for d in (SUPPORT_DIR, LOG_DIR):
 
 def log(message: str) -> None:
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {message}\n"
     try:
         with LOG_FILE.open("a", encoding="utf-8") as f:
-            f.write(line)
+            f.write(f"[{ts}] {message}\n")
     except Exception:
         pass
 
 
 def ensure_audio_dependencies() -> None:
-    """Ensure sounddevice is available in a local venv, then re-exec into it."""
     if os.environ.get(BOOTSTRAP_FLAG) == "1":
         return
     try:
@@ -53,7 +51,6 @@ def ensure_audio_dependencies() -> None:
         return
     except Exception as e:
         log(f"sounddevice import failed before bootstrap: {e!r}")
-
     py = VENV_DIR / "bin" / "python3"
     try:
         if not py.exists():
@@ -130,6 +127,10 @@ def default_config() -> Dict[str, Any]:
         "limiterCeilingDb": -1.0,
         "xpilotLevelerEnabled": True,
         "xpilotLevelerPreset": "standard",
+        "safeMode": True,
+        "sampleRate": 48000,
+        "blockSize": 1024,
+        "latency": "high",
     }
 
 CONFIG_LOCK = threading.RLock()
@@ -178,14 +179,55 @@ def list_devices() -> Dict[str, Any]:
         return {"inputs": [], "outputs": [], "error": repr(e)}
 
 
+class RingBuffer:
+    def __init__(self, max_samples: int = 48000 * 8) -> None:
+        self.lock = threading.Lock()
+        self.data: deque[float] = deque(maxlen=max_samples)
+        self.underruns = 0
+        self.overruns = 0
+
+    def clear(self) -> None:
+        with self.lock:
+            self.data.clear()
+            self.underruns = 0
+            self.overruns = 0
+
+    def append(self, values: List[float]) -> None:
+        with self.lock:
+            before_free = self.data.maxlen - len(self.data) if self.data.maxlen else len(values)
+            if before_free < len(values):
+                self.overruns += 1
+            self.data.extend(values)
+
+    def read(self, count: int) -> List[float]:
+        out: List[float] = []
+        with self.lock:
+            n = min(count, len(self.data))
+            for _ in range(n):
+                out.append(self.data.popleft())
+            if n < count:
+                self.underruns += 1
+                out.extend([0.0] * (count - n))
+        return out
+
+    def diagnostics(self) -> Dict[str, Any]:
+        with self.lock:
+            return {"queuedSamples": len(self.data), "underruns": self.underruns, "overruns": self.overruns}
+
+
 class AudioEngine:
     def __init__(self) -> None:
         self.lock = threading.RLock()
         self.running = False
         self.streams: List[Any] = []
-        self.queues: Dict[str, queue.Queue[List[float]]] = {"discord": queue.Queue(maxsize=8), "xpilot": queue.Queue(maxsize=8)}
+        self.buffers: Dict[str, RingBuffer] = {"discord": RingBuffer(), "xpilot": RingBuffer()}
         self.meters = {"discord": -120.0, "xpilot": -120.0, "output": -120.0}
         self.leveler_gain = 1.0
+        self.last_error = ""
+        self.sample_rate = 48000
+        self.block_size = 1024
+        self.latency: Any = "high"
+        self.callback_errors = 0
 
     def stop(self) -> None:
         with self.lock:
@@ -200,12 +242,8 @@ class AudioEngine:
                     pass
             self.streams = []
             self.running = False
-            while not self.queues["discord"].empty():
-                try: self.queues["discord"].get_nowait()
-                except Exception: break
-            while not self.queues["xpilot"].empty():
-                try: self.queues["xpilot"].get_nowait()
-                except Exception: break
+            self.buffers["discord"].clear()
+            self.buffers["xpilot"].clear()
             log("audio stopped")
 
     def _input_cb(self, source: str):
@@ -215,23 +253,13 @@ class AudioEngine:
                 samples.frombytes(bytes(indata))
                 vals = list(samples)
                 self.meters[source] = meter_db(vals)
-                q = self.queues[source]
-                if q.full():
-                    try: q.get_nowait()
-                    except Exception: pass
-                q.put_nowait(vals)
-            except Exception as e:
-                log(f"input cb {source} failed: {e!r}")
+                self.buffers[source].append(vals)
+            except Exception:
+                self.callback_errors += 1
         return cb
 
     def _get_stereo(self, source: str, frames: int) -> List[float]:
-        try:
-            vals = self.queues[source].get_nowait()
-        except Exception:
-            return [0.0] * (frames * 2)
-        if len(vals) < frames * 2:
-            vals = vals + [0.0] * (frames * 2 - len(vals))
-        return vals[: frames * 2]
+        return self.buffers[source].read(frames * 2)
 
     def _pan(self, stereo: List[float], pan: float) -> List[float]:
         pan = max(-1.0, min(1.0, float(pan)))
@@ -239,82 +267,98 @@ class AudioEngine:
         lg, rg = math.cos(angle), math.sin(angle)
         out: List[float] = []
         for i in range(0, len(stereo), 2):
-            mono = 0.5 * (stereo[i] + stereo[i + 1])
+            left = stereo[i]
+            right = stereo[i + 1] if i + 1 < len(stereo) else left
+            mono = 0.5 * (left + right)
             out.append(mono * lg)
             out.append(mono * rg)
         return out
 
     def _output_cb(self, outdata, frames, time_info, status):
-        with CONFIG_LOCK:
-            cfg = dict(CONFIG)
-        d = self._pan(self._get_stereo("discord", frames), float(cfg.get("discordPan", -1.0)))
-        x = self._pan(self._get_stereo("xpilot", frames), float(cfg.get("xpilotPan", 1.0)))
-        dg = db_to_gain(float(cfg.get("discordGainDb", 0.0)))
-        xg = db_to_gain(float(cfg.get("xpilotGainDb", 0.0)))
-        mg = db_to_gain(float(cfg.get("masterGainDb", 0.0)))
-        ceiling = db_to_gain(float(cfg.get("limiterCeilingDb", -1.0)))
+        try:
+            with CONFIG_LOCK:
+                cfg = dict(CONFIG)
+            d = self._pan(self._get_stereo("discord", frames), float(cfg.get("discordPan", -1.0)))
+            x = self._pan(self._get_stereo("xpilot", frames), float(cfg.get("xpilotPan", 1.0)))
+            dg = db_to_gain(float(cfg.get("discordGainDb", 0.0)))
+            xg = db_to_gain(float(cfg.get("xpilotGainDb", 0.0)))
+            mg = db_to_gain(float(cfg.get("masterGainDb", 0.0)))
+            ceiling = db_to_gain(float(cfg.get("limiterCeilingDb", -1.0)))
 
-        # simple xPilot auto-level: fast cut of loud signals, cautious boost of quiet signals
-        if cfg.get("xpilotLevelerEnabled", True):
-            xdb = self.meters.get("xpilot", -120.0)
-            target = -21.0
-            desired = db_to_gain(max(-18.0, min(12.0, target - xdb))) if xdb > -60 else 1.0
-            alpha = 0.22 if desired < self.leveler_gain else 0.04
-            self.leveler_gain = self.leveler_gain + alpha * (desired - self.leveler_gain)
-            xg *= self.leveler_gain
+            if cfg.get("xpilotLevelerEnabled", True):
+                xdb = self.meters.get("xpilot", -120.0)
+                target = -21.0
+                desired = db_to_gain(max(-18.0, min(12.0, target - xdb))) if xdb > -60 else 1.0
+                alpha = 0.18 if desired < self.leveler_gain else 0.025
+                self.leveler_gain = self.leveler_gain + alpha * (desired - self.leveler_gain)
+                xg *= self.leveler_gain
 
-        if cfg.get("duckingEnabled", True):
-            mode = cfg.get("duckingMode", "xpilot_ducks_discord")
-            th = float(cfg.get("thresholdDb", -32.0))
-            duck = db_to_gain(float(cfg.get("duckDepthDb", -12.0)))
-            if mode == "xpilot_ducks_discord" and self.meters.get("xpilot", -120) > th:
-                dg *= duck
-            if mode == "discord_ducks_xpilot" and self.meters.get("discord", -120) > th:
-                xg *= duck
+            if cfg.get("duckingEnabled", True):
+                th = float(cfg.get("thresholdDb", -32.0))
+                duck = db_to_gain(float(cfg.get("duckDepthDb", -12.0)))
+                if cfg.get("duckingMode", "xpilot_ducks_discord") == "xpilot_ducks_discord" and self.meters.get("xpilot", -120) > th:
+                    dg *= duck
+                if cfg.get("duckingMode") == "discord_ducks_xpilot" and self.meters.get("discord", -120) > th:
+                    xg *= duck
 
-        mix: List[float] = []
-        peak = 0.0
-        for i in range(frames * 2):
-            v = (d[i] * dg + x[i] * xg) * mg
-            if abs(v) > ceiling and abs(v) > 1e-9:
-                v = ceiling if v > 0 else -ceiling
-            v = max(-1.0, min(1.0, v))
-            peak = max(peak, abs(v))
-            mix.append(v)
-        self.meters["output"] = gain_to_db(peak)
-        b = array.array("f", mix).tobytes()
-        outdata[:] = b
+            mix: List[float] = []
+            peak = 0.0
+            for i in range(frames * 2):
+                v = (d[i] * dg + x[i] * xg) * mg
+                if abs(v) > ceiling and abs(v) > 1e-9:
+                    v = ceiling if v > 0 else -ceiling
+                v = max(-1.0, min(1.0, v))
+                peak = max(peak, abs(v))
+                mix.append(v)
+            self.meters["output"] = gain_to_db(peak)
+            outdata[:] = array.array("f", mix).tobytes()
+        except Exception:
+            self.callback_errors += 1
+            outdata[:] = array.array("f", [0.0] * (frames * 2)).tobytes()
 
     def start(self) -> Dict[str, Any]:
         if sd is None:
-            return {"ok": False, "error": SOUNDDEVICE_ERROR or "sounddevice unavailable"}
+            self.last_error = SOUNDDEVICE_ERROR or "sounddevice unavailable"
+            return {"ok": False, "error": self.last_error}
         with self.lock:
             self.stop()
+            load_config()
             with CONFIG_LOCK:
                 cfg = dict(CONFIG)
             out_dev = cfg.get("outputDevice")
             if out_dev is None:
                 return {"ok": False, "error": "Bitte Output auswählen."}
-            sr = 48000
-            block = 256
+            self.sample_rate = int(cfg.get("sampleRate", 48000) or 48000)
+            self.block_size = int(cfg.get("blockSize", 1024) or 1024)
+            if cfg.get("safeMode", True):
+                self.block_size = max(self.block_size, 1024)
+                self.latency = "high"
+            else:
+                self.block_size = max(256, self.block_size)
+                self.latency = cfg.get("latency", "low") or "low"
             try:
                 if cfg.get("discordInput") is not None:
-                    self.streams.append(sd.RawInputStream(device=int(cfg["discordInput"]), channels=2, samplerate=sr, blocksize=block, dtype="float32", callback=self._input_cb("discord")))
+                    self.streams.append(sd.RawInputStream(device=int(cfg["discordInput"]), channels=2, samplerate=self.sample_rate, blocksize=self.block_size, latency=self.latency, dtype="float32", callback=self._input_cb("discord")))
                 if cfg.get("xpilotInput") is not None:
-                    self.streams.append(sd.RawInputStream(device=int(cfg["xpilotInput"]), channels=2, samplerate=sr, blocksize=block, dtype="float32", callback=self._input_cb("xpilot")))
-                self.streams.append(sd.RawOutputStream(device=int(out_dev), channels=2, samplerate=sr, blocksize=block, dtype="float32", callback=self._output_cb))
+                    self.streams.append(sd.RawInputStream(device=int(cfg["xpilotInput"]), channels=2, samplerate=self.sample_rate, blocksize=self.block_size, latency=self.latency, dtype="float32", callback=self._input_cb("xpilot")))
+                self.streams.append(sd.RawOutputStream(device=int(out_dev), channels=2, samplerate=self.sample_rate, blocksize=self.block_size, latency=self.latency, dtype="float32", callback=self._output_cb))
                 for s in self.streams:
                     s.start()
                 self.running = True
-                log("streams started")
-                return {"ok": True}
+                self.last_error = ""
+                log(f"streams started sr={self.sample_rate} block={self.block_size} latency={self.latency}")
+                return {"ok": True, "sampleRate": self.sample_rate, "blockSize": self.block_size, "latency": str(self.latency)}
             except Exception as e:
+                self.last_error = repr(e)
                 log(f"audio start failed: {e!r}")
                 self.stop()
-                return {"ok": False, "error": repr(e)}
+                return {"ok": False, "error": self.last_error}
 
     def state(self) -> Dict[str, Any]:
-        return {"ok": True, "version": ENGINE_VERSION, "running": self.running, "meters": dict(self.meters), "levelerGainDb": gain_to_db(self.leveler_gain)}
+        return {"ok": True, "version": ENGINE_VERSION, "running": self.running, "meters": dict(self.meters), "levelerGainDb": gain_to_db(self.leveler_gain), "diagnostics": self.diagnostics()}
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return {"sampleRate": self.sample_rate, "blockSize": self.block_size, "latency": str(self.latency), "callbackErrors": self.callback_errors, "discord": self.buffers["discord"].diagnostics(), "xpilot": self.buffers["xpilot"].diagnostics(), "lastError": self.last_error}
 
 ENGINE = AudioEngine()
 
@@ -327,9 +371,8 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0") or "0")
         if n <= 0:
             return {}
-        raw = self.rfile.read(n)
         try:
-            data = json.loads(raw.decode("utf-8"))
+            data = json.loads(self.rfile.read(n).decode("utf-8"))
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
@@ -352,6 +395,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(list_devices())
         elif self.path.startswith("/state"):
             self._send(ENGINE.state())
+        elif self.path.startswith("/diagnostics"):
+            self._send({"ok": True, "version": ENGINE_VERSION, "sounddevice": sd is not None, "engine": ENGINE.diagnostics(), "devices": list_devices()})
         elif self.path.startswith("/config"):
             with CONFIG_LOCK:
                 self._send({"ok": True, "config": dict(CONFIG)})

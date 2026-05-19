@@ -1,2 +1,2 @@
-AudioDaBitch 0.5.5
-Made with ♥ in Berlin - by Michel Damhorst
+AudioDaBitch 0.5.6
+Safe-Mode Audioqualität, sichtbarer Changelog und stabilere Ringbuffer.

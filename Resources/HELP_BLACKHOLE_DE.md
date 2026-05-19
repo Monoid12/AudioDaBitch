@@ -1,29 +1,47 @@
-# AudioDaBitch Hilfe: BlackHole Routing
+# Hilfe / BlackHole Routing
 
 ## Ziel
-Discord und xPilot sollen nicht direkt auf den Kopfhörer gehen. Sie gehen zuerst in BlackHole, dann durch AudioDaBitch, und erst danach auf deinen Kopfhörer oder dein Audiointerface.
 
-## Korrektes Routing
+Discord und xPilot sollen zuerst in virtuelle BlackHole-Geräte laufen. AudioDaBitch verarbeitet beide Quellen, macht Ducking, Panning, Leveling und Limiting und gibt erst danach auf den Kopfhörer aus.
 
-Discord:
-- Input Device: dein normales Mikrofon
+## Richtiger Signalfluss
+
+Discord -> BlackHole 2ch -> AudioDaBitch Discord -> Output
+
+xPilot -> BlackHole 16ch -> AudioDaBitch xPilot -> Output
+
+AudioDaBitch Output -> Kopfhörer / Headset / Audiointerface
+
+## Wichtig
+
+Kein Multi-Output-Gerät mit Kopfhörer verwenden. Sonst hörst du Discord oder xPilot zusätzlich direkt und der Limiter wirkt nicht vollständig.
+
+## Empfohlene macOS Audio-MIDI-Einstellung
+
+- BlackHole 2ch: 48.000 Hz
+- BlackHole 16ch: 48.000 Hz
+- Kopfhörer / Headset / Audiointerface: 48.000 Hz, falls verfügbar
+
+## Discord
+
+- Input Device: normales Mikrofon
 - Output Device: BlackHole 2ch
 
-xPilot:
-- Microphone/Input: dein normales Mikrofon
+## xPilot
+
+- Microphone/Input: normales Mikrofon
 - Headset Device: BlackHole 16ch
 - Speaker Device: BlackHole 16ch
 
-AudioDaBitch:
+## AudioDaBitch
+
 - Discord Input: BlackHole 2ch
 - xPilot Input: BlackHole 16ch
-- Output: dein Kopfhörer oder Audiointerface
+- Output: echter Kopfhörer / Headset / Audiointerface
 
-## Wichtig
-Kein Multi-Output-Gerät mit Kopfhörer verwenden. Sonst hörst du Discord oder xPilot einmal direkt und einmal über AudioDaBitch. Dann wirken Ducking und Limiter nicht vollständig.
+## Wenn Audio stottert
 
-## Merksatz
-Alles erst in BlackHole, dann in AudioDaBitch, dann erst auf den Kopfhörer.
-
-## Fehlerdiagnose
-Wenn keine Geräte auswählbar sind, klicke zuerst auf „Engine reparieren“ und danach auf „Geräte aktualisieren“. Wenn weiterhin keine Geräte erscheinen, öffne Logs und erstelle eine Log-ZIP.
+1. In AudioDaBitch auf „Audio stabilisieren“ klicken.
+2. In Audio-MIDI-Setup alle beteiligten Geräte auf 48.000 Hz stellen.
+3. Bluetooth/AirPods testweise vermeiden, wenn besonders niedrige Latenz gebraucht wird.
+4. Logs -> Log-ZIP erstellen und schicken.
