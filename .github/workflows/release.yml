@@ -1,0 +1,44 @@
+name: build-release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build unsigned app and pkg
+        run: bash Scripts/build_release.sh
+
+      - name: Prepare release notes
+        run: |
+          TAG="${GITHUB_REF_NAME:-manual}"
+          bash Scripts/extract_changelog.sh "$TAG" > dist/GITHUB_RELEASE_NOTES.md
+          if [ ! -s dist/GITHUB_RELEASE_NOTES.md ]; then
+            cp dist/RELEASE_NOTES.md dist/GITHUB_RELEASE_NOTES.md
+          fi
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME:-v$(cat VERSION)}"
+          gh release view "$TAG" >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
+          if [ "$EXISTS" = "1" ]; then
+            gh release upload "$TAG" dist/AudioDaBitch.pkg dist/AudioDaBitch.zip dist/AudioDaBitch.streamDeckPlugin.zip dist/SHA256SUMS.txt --clobber
+            gh release edit "$TAG" --notes-file dist/GITHUB_RELEASE_NOTES.md --title "AudioDaBitch $TAG"
+          else
+            gh release create "$TAG" dist/AudioDaBitch.pkg dist/AudioDaBitch.zip dist/AudioDaBitch.streamDeckPlugin.zip dist/SHA256SUMS.txt --title "AudioDaBitch $TAG" --notes-file dist/GITHUB_RELEASE_NOTES.md
+          fi

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.micheldamhorst.audiodabitch",
+  "Name": "AudioDaBitch",
+  "Version": "0.4.2.0",
+  "Author": "Michel Damhorst",
+  "Description": "Control AudioDaBitch gain, ducking and limiter from Stream Deck XL and Stream Deck +.",
+  "Category": "AudioDaBitch",
+  "CategoryIcon": "static/imgs/plugin/category-icon",
+  "Icon": "static/imgs/plugin/marketplace",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13.0"
+    }
+  ],
+  "Nodejs": {
+    "Version": "24",
+    "Debug": "enabled"
+  },
+  "Actions": [
+    {
+      "Name": "xPilot Gain +",
+      "UUID": "com.micheldamhorst.audiodabitch.xpilot-gain-up",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Increase xPilot gain by 1 dB.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "XP +1",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "xPilot Gain -",
+      "UUID": "com.micheldamhorst.audiodabitch.xpilot-gain-down",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Decrease xPilot gain by 1 dB.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "XP -1",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Discord Gain +",
+      "UUID": "com.micheldamhorst.audiodabitch.discord-gain-up",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Increase Discord gain by 1 dB.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "DC +1",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Discord Gain -",
+      "UUID": "com.micheldamhorst.audiodabitch.discord-gain-down",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Decrease Discord gain by 1 dB.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "DC -1",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Ducking Tiefe +",
+      "UUID": "com.micheldamhorst.audiodabitch.duck-more",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Make ducking stronger.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "Duck +",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Ducking Tiefe -",
+      "UUID": "com.micheldamhorst.audiodabitch.duck-less",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Make ducking weaker.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "Duck -",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Limiter Toggle",
+      "UUID": "com.micheldamhorst.audiodabitch.limiter-toggle",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Toggle master limiter.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Title": "Limiter",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "xPilot Gain Dial",
+      "UUID": "com.micheldamhorst.audiodabitch.xpilot-gain-dial",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Turn to adjust xPilot gain.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "Encoder": {
+        "layout": "$A1"
+      },
+      "States": [
+        {
+          "Title": "xPilot",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Ducking Dial",
+      "UUID": "com.micheldamhorst.audiodabitch.ducking-dial",
+      "Icon": "static/imgs/actions/gain/icon",
+      "Tooltip": "Turn to adjust ducking depth.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "Encoder": {
+        "layout": "$A1"
+      },
+      "States": [
+        {
+          "Title": "Ducking",
+          "TitleAlignment": "middle"
+        }
+      ]
+    }
+  ]
+}
