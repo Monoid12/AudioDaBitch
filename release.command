@@ -23,6 +23,7 @@ case "$ok" in
   *) echo "Abgebrochen."; exit 0 ;;
 esac
 cleanup_cache_artifacts
+cleanup_cache_artifacts
 git add .
 if git diff --cached --quiet; then
   echo "Keine Änderungen zum Committen."

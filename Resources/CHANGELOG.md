@@ -1,17 +1,31 @@
 # Changelog
 
+## 0.5.4
+
+- Audio-Seite neu aufgebaut: drei klare Blöcke nebeneinander für Discord, xPilot und Output.
+- Pegelanzeigen direkt in jedem Block sichtbar.
+- Geräteauswahl repariert: Inputs und Outputs werden aus der Engine-Geräteliste geladen und stabil per Device-ID gespeichert.
+- Hilfe-Seite wieder mit Inhalt gefüllt.
+- Changelog wieder sichtbar und gefüllt.
+- Update-/Installer-Cleanup aus 0.5.3 bleibt erhalten.
+- Engine-Version bleibt strikt mit App-Version synchron.
+
 ## 0.5.3
-- Kompakte Oberfläche für MacBook Pro 14".
-- Sichtbare Pegelanzeigen für Discord, xPilot und Output.
-- Gefüllte Hilfe-/BlackHole-Seite.
-- Gefüllter Changelog in der App.
-- Stabilerer Engine-Lifecycle mit PID-Datei.
-- Hängende eigene Engine-Prozesse werden beim Start/Stop bereinigt.
-- Update-Prozess stoppt Engine, startet Installer und öffnet AudioDaBitch danach erneut.
-- Einfacherer Release-Assistent mit Build-Check.
+
+- Installer entfernt alte App-Bundles vollständig vor Neuinstallation.
+- Alte Engine-Pfade werden blockiert.
+- Engine-Version wird gegen App-Version geprüft.
+
+## 0.5.2
+
+- Kompaktere Oberfläche für MacBook Pro 14 Zoll.
+- Erste sichtbare Pegelanzeigen.
+- Engine-Cleanup und Prozessbereinigung verbessert.
 
 ## 0.5.1
-- Swift-Compile-Fix für row value labels.
+
+- Swift-Buildfehler in der GUI behoben.
 
 ## 0.5.0
-- Erste Beta mit kompakterer Struktur, Logs, Update-Tab und xPilot-Leveler.
+
+- Umbau auf native macOS-App-Struktur mit vereinfachtem Release-Assistenten.

@@ -1,24 +1,31 @@
 # Changelog
 
-## 0.5.1 - 2026-05-19
-- Stabilitaets- und Bedienbarkeits-Release.
-- Engine-Lifecycle umgebaut: alte Engine-Prozesse werden vor Start/Stop entfernt.
-- Keine GUI-Abhaengigkeit vom alten lokalen HTTP-State der 0.4.x-App.
-- Kompaktere App-GUI fuer MacBook Pro 14 Zoll.
-- Fenster-X fragt nach Beenden, Minimieren oder Abbrechen.
-- Beenden stoppt die Audio-Engine.
-- Minimize-/Fenster-anzeigen-Menue eingebaut.
-- Output- und Input-Auswahl werden per stabiler Device-ID/Index gespeichert.
-- xPilot Auto-Leveler bleibt als eigene Einstellseite erhalten.
-- GitHub-Update-Tab laedt das Release-PKG und oeffnet den macOS Installer.
-- Vereinfachter Release-Prozess ueber `./release.command`.
-- `./dev_check.command` fuer Vorabpruefung eingebaut.
+## 0.5.4
 
-## 0.4.5
-- Kombiniert Swift-Concurrency-Buildfix und Apple-Silicon-Enginefix.
+- Audio-Seite neu aufgebaut: drei klare Blöcke nebeneinander für Discord, xPilot und Output.
+- Pegelanzeigen direkt in jedem Block sichtbar.
+- Geräteauswahl repariert: Inputs und Outputs werden aus der Engine-Geräteliste geladen und stabil per Device-ID gespeichert.
+- Hilfe-Seite wieder mit Inhalt gefüllt.
+- Changelog wieder sichtbar und gefüllt.
+- Update-/Installer-Cleanup aus 0.5.3 bleibt erhalten.
+- Engine-Version bleibt strikt mit App-Version synchron.
 
-## 0.4.4
-- Engine-Fix vorbereitet, Build nicht als finales Release verwenden.
+## 0.5.3
 
-## 0.4.3
-- Swift-Concurrency-Buildfix fuer GitHub Actions.
+- Installer entfernt alte App-Bundles vollständig vor Neuinstallation.
+- Alte Engine-Pfade werden blockiert.
+- Engine-Version wird gegen App-Version geprüft.
+
+## 0.5.2
+
+- Kompaktere Oberfläche für MacBook Pro 14 Zoll.
+- Erste sichtbare Pegelanzeigen.
+- Engine-Cleanup und Prozessbereinigung verbessert.
+
+## 0.5.1
+
+- Swift-Buildfehler in der GUI behoben.
+
+## 0.5.0
+
+- Umbau auf native macOS-App-Struktur mit vereinfachtem Release-Assistenten.
