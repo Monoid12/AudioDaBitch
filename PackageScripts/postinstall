@@ -1,5 +1,5 @@
 #!/bin/bash
 set +e
-/bin/sleep 1
-/usr/bin/open -a AudioDaBitch 2>/dev/null || true
+/usr/bin/xattr -dr com.apple.quarantine "/Applications/AudioDaBitch.app" 2>/dev/null
+# Do not auto-start during normal pkg install. In-app updater may restart separately.
 exit 0

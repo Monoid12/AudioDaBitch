@@ -1,12 +1,9 @@
 #!/bin/bash
 set +e
-/usr/bin/pkill -f '/AudioDaBitch.app/.*/engine.py' 2>/dev/null || true
-/usr/bin/pkill -f 'Resources/engine.py' 2>/dev/null || true
-/usr/bin/pkill -f 'audiodabitch_engine.py' 2>/dev/null || true
-/bin/sleep 0.3
-/usr/sbin/lsof -tiTCP:49372 -sTCP:LISTEN | /usr/bin/xargs -r /bin/kill -TERM 2>/dev/null || true
-/bin/sleep 0.2
-/usr/sbin/lsof -tiTCP:49372 -sTCP:LISTEN | /usr/bin/xargs -r /bin/kill -KILL 2>/dev/null || true
-/bin/rm -rf /Applications/AudioDaBitch.app
-/bin/rm -f "$HOME/Library/Application Support/AudioDaBitch/engine.pid" 2>/dev/null || true
+/usr/bin/pkill -f "/Applications/AudioDaBitch.app/Contents/Resources/engine.py" 2>/dev/null
+/usr/bin/pkill -f "audiodabitch_engine.py" 2>/dev/null
+/usr/bin/pkill -f "AudioDaBitch.app/Contents/MacOS/AudioDaBitch" 2>/dev/null
+if [ -d "/Applications/AudioDaBitch.app" ]; then
+  /bin/rm -rf "/Applications/AudioDaBitch.app"
+fi
 exit 0
