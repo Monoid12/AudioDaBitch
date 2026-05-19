@@ -45,4 +45,4 @@ Im entpackten Repository-Paket:
 ./push_to_github.command
 ```
 
-Das Script pushed `main` und Tag `v0.4.2`. Danach baut GitHub Actions automatisch `AudioDaBitch.pkg` und erstellt/aktualisiert den Release.
+Das Script pushed `main` und Tag `v0.4.3`. Danach baut GitHub Actions automatisch `AudioDaBitch.pkg` und erstellt/aktualisiert den Release.

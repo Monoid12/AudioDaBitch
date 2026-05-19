@@ -389,4 +389,4 @@ Frühere Builds hatten zwei relevante Probleme:
 1. Tkinter/Tk konnte auf macOS unter Rosetta abstürzen.
 2. Der JXA/AppleScript-Launcher konnte mit einem Syntaxfehler abbrechen.
 
-Version 0.4.2 entfernt beide Startpfade. Die App nutzt keine Tkinter-GUI und keine JXA/AppleScript-GUI.
+Version 0.4.3 entfernt beide Startpfade. Die App nutzt keine Tkinter-GUI und keine JXA/AppleScript-GUI.

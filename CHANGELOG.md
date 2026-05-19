@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.2] - 2026-05-19
+## [0.4.3] - 2026-05-19
 
 ### Added
 - Native SwiftUI application structure for AudioDaBitch.

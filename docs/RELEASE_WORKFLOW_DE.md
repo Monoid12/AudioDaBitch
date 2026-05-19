@@ -34,7 +34,7 @@ Im Projektordner:
 ./push_to_github.command
 ```
 
-Das Script committed den Stand, pusht `main` und setzt den Tag `v0.4.2`.
+Das Script committed den Stand, pusht `main` und setzt den Tag `v0.4.3`.
 
 ## Automatischer Release
 

@@ -16,7 +16,7 @@ AudioDaBitch is a macOS audio routing, ducking and limiting tool for Discord + x
 
 ## Current release
 
-Version: `0.4.2`
+Version: `0.4.3`
 
 ## macOS routing concept
 
@@ -60,7 +60,7 @@ AudioDaBitch.streamDeckPlugin.zip
 SHA256SUMS.txt
 ```
 
-to a GitHub Release when a tag like `v0.4.2` is pushed.
+to a GitHub Release when a tag like `v0.4.3` is pushed.
 
 ## First push from Michel's Mac
 
@@ -82,7 +82,7 @@ Then run:
 ./push_to_github.command
 ```
 
-The script creates or updates `Monoid12/AudioDaBitch`, commits the repository, pushes `main`, tags `v0.4.2`, and triggers GitHub Actions.
+The script creates or updates `Monoid12/AudioDaBitch`, commits the repository, pushes `main`, tags `v0.4.3`, and triggers GitHub Actions.
 
 ## GitHub settings
 

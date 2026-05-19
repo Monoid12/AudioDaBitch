@@ -94,4 +94,4 @@ curl -X POST http://127.0.0.1:49372/command \
 
 ## Hinweis
 
-Der Stream Deck Support ist in 0.4.2 als erster Plugin-Entwurf enthalten. Er sollte auf echter Stream Deck XL und Stream Deck + Hardware getestet und danach verfeinert werden. Die Manifest-Struktur verwendet Keypad-Aktionen für normale Stream-Deck-Tasten und Encoder-Aktionen für Stream Deck + Drehregler.
+Der Stream Deck Support ist in 0.4.3 als erster Plugin-Entwurf enthalten. Er sollte auf echter Stream Deck XL und Stream Deck + Hardware getestet und danach verfeinert werden. Die Manifest-Struktur verwendet Keypad-Aktionen für normale Stream-Deck-Tasten und Encoder-Aktionen für Stream Deck + Drehregler.

@@ -14,7 +14,7 @@ LOG_DIR = Path.home() / "Library" / "Logs" / "AudioDaBitch"
 CONFIG_PATH = APP_SUPPORT / "config.json"
 ENGINE_LOG = LOG_DIR / "engine.log"
 PORT = int(os.environ.get("AUDIODABITCH_PORT", "49372"))
-VERSION = os.environ.get("AUDIODABITCH_VERSION", "0.4.2")
+VERSION = os.environ.get("AUDIODABITCH_VERSION", "0.4.3")
 APP_SUPPORT.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
