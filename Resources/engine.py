@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.9
+# AudioDaBitch Engine 0.5.10
 from __future__ import annotations
 
 import atexit
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
 
-ENGINE_VERSION = "0.5.9"
+ENGINE_VERSION = "0.5.10"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -125,8 +125,17 @@ def default_config() -> Dict[str, Any]:
         "duckDepthDb": -12.0,
         "thresholdDb": -32.0,
         "limiterCeilingDb": -1.0,
+        "discordLevelerEnabled": True,
+        "discordLevelerTargetDb": -21.0,
+        "discordLevelerMaxBoostDb": 12.0,
+        "discordLevelerMaxCutDb": -18.0,
+        "discordLevelerSpeed": 45.0,
         "xpilotLevelerEnabled": True,
         "xpilotLevelerPreset": "standard",
+        "xpilotLevelerTargetDb": -21.0,
+        "xpilotLevelerMaxBoostDb": 12.0,
+        "xpilotLevelerMaxCutDb": -18.0,
+        "xpilotLevelerSpeed": 45.0,
         "safeMode": True,
         "sampleRate": 48000,
         "blockSize": 1024,
@@ -222,7 +231,7 @@ class AudioEngine:
         self.streams: List[Any] = []
         self.buffers: Dict[str, RingBuffer] = {"discord": RingBuffer(), "xpilot": RingBuffer()}
         self.meters = {"discord": -120.0, "xpilot": -120.0, "output": -120.0}
-        self.leveler_gain = 1.0
+        self.leveler_gains = {"discord": 1.0, "xpilot": 1.0}
         self.last_error = ""
         self.sample_rate = 48000
         self.block_size = 1024
@@ -274,6 +283,29 @@ class AudioEngine:
             out.append(mono * rg)
         return out
 
+    def _leveler_gain(self, source: str, cfg: Dict[str, Any]) -> float:
+        enabled_key = f"{source}LevelerEnabled"
+        if not cfg.get(enabled_key, True):
+            self.leveler_gains[source] = self.leveler_gains.get(source, 1.0) + 0.02 * (1.0 - self.leveler_gains.get(source, 1.0))
+            return self.leveler_gains[source]
+        source_db = self.meters.get(source, -120.0)
+        current = self.leveler_gains.get(source, 1.0)
+        if source_db <= -60.0:
+            desired = 1.0
+        else:
+            target = float(cfg.get(f"{source}LevelerTargetDb", -21.0))
+            max_boost = max(0.0, float(cfg.get(f"{source}LevelerMaxBoostDb", 12.0)))
+            max_cut = min(0.0, float(cfg.get(f"{source}LevelerMaxCutDb", -18.0)))
+            desired_db = max(max_cut, min(max_boost, target - source_db))
+            desired = db_to_gain(desired_db)
+        speed = max(1.0, min(100.0, float(cfg.get(f"{source}LevelerSpeed", 45.0))))
+        attack = 0.04 + (speed / 100.0) * 0.28
+        release = 0.008 + (speed / 100.0) * 0.06
+        alpha = attack if desired < current else release
+        current = current + alpha * (desired - current)
+        self.leveler_gains[source] = current
+        return current
+
     def _output_cb(self, outdata, frames, time_info, status):
         try:
             with CONFIG_LOCK:
@@ -285,13 +317,14 @@ class AudioEngine:
             mg = db_to_gain(float(cfg.get("masterGainDb", 0.0)))
             ceiling = db_to_gain(float(cfg.get("limiterCeilingDb", -1.0)))
 
+            if cfg.get("discordLevelerEnabled", True):
+                dg *= self._leveler_gain("discord", cfg)
+            else:
+                self._leveler_gain("discord", cfg)
             if cfg.get("xpilotLevelerEnabled", True):
-                xdb = self.meters.get("xpilot", -120.0)
-                target = -21.0
-                desired = db_to_gain(max(-18.0, min(12.0, target - xdb))) if xdb > -60 else 1.0
-                alpha = 0.18 if desired < self.leveler_gain else 0.025
-                self.leveler_gain = self.leveler_gain + alpha * (desired - self.leveler_gain)
-                xg *= self.leveler_gain
+                xg *= self._leveler_gain("xpilot", cfg)
+            else:
+                self._leveler_gain("xpilot", cfg)
 
             if cfg.get("duckingEnabled", True):
                 th = float(cfg.get("thresholdDb", -32.0))
@@ -327,7 +360,7 @@ class AudioEngine:
                 cfg = dict(CONFIG)
             out_dev = cfg.get("outputDevice")
             if out_dev is None:
-                return {"ok": False, "error": "Bitte Output auswählen."}
+                return {"ok": False, "error": "Please choose an output device."}
             self.sample_rate = int(cfg.get("sampleRate", 48000) or 48000)
             self.block_size = int(cfg.get("blockSize", 1024) or 1024)
             if cfg.get("safeMode", True):
@@ -355,7 +388,7 @@ class AudioEngine:
                 return {"ok": False, "error": self.last_error}
 
     def state(self) -> Dict[str, Any]:
-        return {"ok": True, "version": ENGINE_VERSION, "running": self.running, "meters": dict(self.meters), "levelerGainDb": gain_to_db(self.leveler_gain), "diagnostics": self.diagnostics()}
+        return {"ok": True, "version": ENGINE_VERSION, "running": self.running, "meters": dict(self.meters), "levelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)), "discordLevelerGainDb": gain_to_db(self.leveler_gains.get("discord", 1.0)), "xpilotLevelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)), "diagnostics": self.diagnostics()}
 
     def diagnostics(self) -> Dict[str, Any]:
         return {"sampleRate": self.sample_rate, "blockSize": self.block_size, "latency": str(self.latency), "callbackErrors": self.callback_errors, "discord": self.buffers["discord"].diagnostics(), "xpilot": self.buffers["xpilot"].diagnostics(), "lastError": self.last_error}

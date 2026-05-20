@@ -1,31 +1,31 @@
 # Changelog
 
+## 0.5.10
+
+- Converted all visible app labels, buttons, status messages and in-app documents to English.
+- Added Discord channel 1 automatic leveling using the same engine path as xPilot channel 2.
+- Added visible Leveling controls for Discord and xPilot: enable, target loudness, maximum boost, maximum cut and response speed.
+- Rewrote Updates, Changelog and Help content with clearer headings and symbols.
+
 ## 0.5.9
 
-- PKG-Installation repariert: `AudioDaBitch.app` wird im Installer nicht mehr an alte lokale Build-Pfade relocated.
-- PKG-Build setzt `BundleIsRelocatable=false` und `BundleHasStrictIdentifier=true` für das App-Bundle.
-- Audio-Basis aus 0.5.8 bleibt unverändert: stabiler 0.5.6-Mixer mit `sounddevice==0.5.5`.
+- Fixed PKG installation so `AudioDaBitch.app` is not relocated to old local build paths.
+- PKG build sets `BundleIsRelocatable=false` and `BundleHasStrictIdentifier=true` for the app bundle.
+- Audio base from 0.5.8 remains unchanged: stable 0.5.6 mixer with `sounddevice==0.5.5`.
 
 ## 0.5.8
 
-- Stabile Audio-Basis aus 0.5.6 wiederhergestellt: gleicher Mixer, gleiches Panning, gleicher Safe-Mode, wieder `sounddevice==0.5.5`.
-- Engine-Shutdown repariert, damit `/shutdown` sauber beendet und keine alten Engine-Prozesse liegen bleiben.
-- In-App-Update ergänzt: GitHub-Release-Prüfung, sichtbarer blauer Update-Badge, Download von `AudioDaBitch.pkg`, Engine-Stopp, Installer-Start und Neustart der App nach dem Installer.
-- PKG-Build gehärtet: der Build bricht ab, wenn das Paket keine `Applications/AudioDaBitch.app` mit `Resources/engine.py` enthält.
-- `postinstall` prüft nach der Installation, ob `/Applications/AudioDaBitch.app` wirklich vorhanden und vollständig ist.
-- Changelog- und Hilfe-Tabs bleiben sichtbar gefüllt; keine leeren schwarzen Textflächen.
-- Developer Tool entfernt; `release.command` ist jetzt der robuste Release-Assistent mit eingebauten Checks und separaten Abfragen vor Push und Tag.
-- `dev_check.command` prüft Engine-Version, Swift-Version, App-Bundle, Icon, PKG-Payload und Git-Artefakte.
-
-## 0.5.7
-
-- Installer-Cleanup und erste Update-Hinweise ergänzt.
-- Developer Tool experimentell hinzugefügt.
+- Restored the stable 0.5.6 audio base: same mixer, same panning, same safe mode, and `sounddevice==0.5.5`.
+- Fixed engine shutdown so `/shutdown` exits cleanly and stale engine processes are removed.
+- Added in-app updates: GitHub release check, blue update badge, `AudioDaBitch.pkg` download, engine stop, installer start and app restart.
+- Hardened PKG build and `postinstall` checks for `/Applications/AudioDaBitch.app`.
+- Changelog and Help tabs stay visible and populated.
+- Removed the experimental Developer Tool; releases use `release.command` and `dev_check.command`.
 
 ## 0.5.6
 
-- Audio-Seite stabilisiert: 48-kHz-Safe-Mode, größere Puffer und Ringbuffer gegen kurze Timing-Schwankungen.
-- Geräteauswahl repariert: Inputs und Outputs werden aus der Engine-Geräteliste geladen und per Device-ID gespeichert.
-- Discord-Panning, xPilot-Panning, Ducking, Limiting und xPilot Auto-Leveling sichtbar bedienbar.
-- Changelog als eigener Tab und Hilfe/BlackHole-Routing sichtbar gefüllt.
-- App-Icon und Log-ZIP wieder eingebunden.
+- Stabilized audio with 48 kHz safe mode, larger buffers and ring buffers for short timing glitches.
+- Fixed device selection: inputs and outputs load from the engine device list and are stored by device ID.
+- Discord panning, xPilot panning, ducking, limiting and xPilot auto-leveling are visible.
+- Added in-app Changelog and Help / BlackHole routing content.
+- Restored app icon and Log ZIP export.

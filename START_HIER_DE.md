@@ -1,7 +1,7 @@
-# AudioDaBitch 0.5.9 - Start hier
+# AudioDaBitch 0.5.10 - Start here
 
-1. `./dev_check.command` ausführen.
-2. `./release.command` starten, wenn ein Release vorbereitet werden soll.
-3. Erst nach erfolgreichem Check main pushen und taggen.
-4. GitHub Actions abwarten.
-5. `AudioDaBitch.pkg` aus dem neuesten Release installieren oder den In-App-Update-Tab verwenden.
+1. Run `./dev_check.command`.
+2. Run `./release.command` when preparing a release.
+3. Push and tag only after the check is green.
+4. Wait for GitHub Actions.
+5. Install `AudioDaBitch.pkg` from the latest release or use the in-app Updates tab.

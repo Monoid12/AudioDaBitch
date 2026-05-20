@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.9"
+let ADBVersion = "0.5.10"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -30,7 +30,7 @@ struct DevicesResponse: Codable { let inputs: [Device]; let outputs: [Device]; l
 struct HealthResponse: Codable { let ok: Bool; let version: String?; let sounddevice: Bool?; let error: String? }
 struct Meters: Codable { let discord: Double?; let xpilot: Double?; let output: Double? }
 struct Diagnostics: Codable { let sampleRate: Int?; let blockSize: Int?; let latency: String?; let callbackErrors: Int?; let lastError: String? }
-struct StateResponse: Codable { let ok: Bool; let version: String?; let running: Bool?; let meters: Meters?; let levelerGainDb: Double?; let diagnostics: Diagnostics? }
+struct StateResponse: Codable { let ok: Bool; let version: String?; let running: Bool?; let meters: Meters?; let levelerGainDb: Double?; let discordLevelerGainDb: Double?; let xpilotLevelerGainDb: Double?; let diagnostics: Diagnostics? }
 struct GitHubAsset: Codable { let name: String; let browserDownloadURL: String; enum CodingKeys: String, CodingKey { case name; case browserDownloadURL = "browser_download_url" } }
 struct GitHubRelease: Codable { let tagName: String; let htmlURL: String?; let assets: [GitHubAsset]; enum CodingKeys: String, CodingKey { case tagName = "tag_name"; case htmlURL = "html_url"; case assets } }
 
@@ -195,12 +195,12 @@ final class BlockView: NSBox {
         ])
         meter.title = title
         stack.addArrangedSubview(meter)
-        stack.addArrangedSubview(label("Gerät"))
+        stack.addArrangedSubview(label("Device"))
         stack.addArrangedSubview(popup)
-        stack.addArrangedSubview(label("Lautstärke"))
+        stack.addArrangedSubview(label("Volume"))
         stack.addArrangedSubview(gain)
         if hasPan {
-            stack.addArrangedSubview(label("Panorama"))
+            stack.addArrangedSubview(label("Pan"))
             stack.addArrangedSubview(pan)
         }
     }
@@ -215,6 +215,79 @@ final class BlockView: NSBox {
     }
 }
 
+final class LevelerPanel: NSBox {
+    let enabled = NSButton(checkboxWithTitle: "Enable leveling", target: nil, action: nil)
+    let target = NSSlider(value: -21, minValue: -36, maxValue: -12, target: nil, action: nil)
+    let maxBoost = NSSlider(value: 12, minValue: 0, maxValue: 18, target: nil, action: nil)
+    let maxCut = NSSlider(value: -18, minValue: -30, maxValue: 0, target: nil, action: nil)
+    let speed = NSSlider(value: 45, minValue: 1, maxValue: 100, target: nil, action: nil)
+    let targetValue = NSTextField(labelWithString: "")
+    let boostValue = NSTextField(labelWithString: "")
+    let cutValue = NSTextField(labelWithString: "")
+    let speedValue = NSTextField(labelWithString: "")
+
+    init(title: String, subtitle: String) {
+        super.init(frame: .zero)
+        self.title = title
+        boxType = .custom
+        borderColor = .separatorColor
+        cornerRadius = 8
+        contentViewMargins = NSSize(width: 14, height: 14)
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 9
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView?.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView!.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView!.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentView!.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: contentView!.bottomAnchor)
+        ])
+        let detail = NSTextField(wrappingLabelWithString: subtitle)
+        detail.textColor = .secondaryLabelColor
+        detail.font = .systemFont(ofSize: 12)
+        enabled.state = .on
+        stack.addArrangedSubview(detail)
+        stack.addArrangedSubview(enabled)
+        stack.addArrangedSubview(controlRow("Target loudness", target, targetValue))
+        stack.addArrangedSubview(controlRow("Maximum boost", maxBoost, boostValue))
+        stack.addArrangedSubview(controlRow("Maximum cut", maxCut, cutValue))
+        stack.addArrangedSubview(controlRow("Response speed", speed, speedValue))
+        updateLabels()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    var controls: [NSControl] { [enabled, target, maxBoost, maxCut, speed] }
+
+    func controlRow(_ title: String, _ slider: NSSlider, _ value: NSTextField) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 118).isActive = true
+        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
+        value.alignment = .right
+        value.textColor = .secondaryLabelColor
+        value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        value.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(slider)
+        row.addArrangedSubview(value)
+        return row
+    }
+
+    func updateLabels() {
+        targetValue.stringValue = "\(Int(target.doubleValue.rounded())) dB"
+        boostValue.stringValue = "+\(Int(maxBoost.doubleValue.rounded())) dB"
+        cutValue.stringValue = "\(Int(maxCut.doubleValue.rounded())) dB"
+        speedValue.stringValue = "\(Int(speed.doubleValue.rounded()))%"
+    }
+}
+
 final class AppController: NSViewController {
     let tabs = NSTabView()
     let status = NSTextField(labelWithString: "Starte...")
@@ -224,8 +297,10 @@ final class AppController: NSViewController {
     let output = BlockView(title: "Output", hasPan: false)
     let deviceError = NSTextField(labelWithString: "")
     let levelerInfo = NSTextField(labelWithString: "")
-    let updateStatus = NSTextField(labelWithString: "Installiert: \(ADBVersion)")
-    let updateButton = NSButton(title: "Update installieren", target: nil, action: nil)
+    let discordLeveler = LevelerPanel(title: "Discord channel 1", subtitle: "Keeps Discord voices steady before ducking, panning and limiting.")
+    let xpilotLeveler = LevelerPanel(title: "xPilot channel 2", subtitle: "Balances VATSIM stations before the master limiter.")
+    let updateStatus = NSTextField(labelWithString: "Installed: \(ADBVersion)")
+    let updateButton = NSButton(title: "Install Update", target: nil, action: nil)
     let helpText = NSTextView()
     let changeText = NSTextView()
     var updateTabItem: NSTabViewItem?
@@ -233,13 +308,13 @@ final class AppController: NSViewController {
     var latestAssetURL: URL?
     var timer: Timer?
 
-    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1000, height: 640)) }
+    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 700)) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         buildUI()
         EngineManager.shared.start()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.refreshAll() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.loadConfigIntoUI(); self.refreshAll() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.checkForUpdates(silent: true) }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in self.pollState() }
     }
@@ -263,11 +338,11 @@ final class AppController: NSViewController {
         top.alignment = .centerY
         status.stringValue = "AudioDaBitch \(ADBVersion)"
         top.addArrangedSubview(status)
-        top.addArrangedSubview(button("Geräte aktualisieren", #selector(loadDevices)))
-        top.addArrangedSubview(button("Audio starten", #selector(startAudio)))
-        top.addArrangedSubview(button("Audio stoppen", #selector(stopAudio)))
-        top.addArrangedSubview(button("Audio stabilisieren", #selector(stabilizeAudio)))
-        top.addArrangedSubview(button("Engine reparieren", #selector(repairEngine)))
+        top.addArrangedSubview(button("Refresh Devices", #selector(loadDevices)))
+        top.addArrangedSubview(button("Start Audio", #selector(startAudio)))
+        top.addArrangedSubview(button("Stop Audio", #selector(stopAudio)))
+        top.addArrangedSubview(button("Stabilize Audio", #selector(stabilizeAudio)))
+        top.addArrangedSubview(button("Repair Engine", #selector(repairEngine)))
         root.addArrangedSubview(top)
 
         diagnosticsLabel.textColor = .secondaryLabelColor
@@ -278,10 +353,10 @@ final class AppController: NSViewController {
         root.addArrangedSubview(tabs)
         tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 530).isActive = true
         addTab("Audio", audioView())
-        addTab("xPilot Leveler", levelerView())
+        addTab("Leveling", levelerView())
         updateTabItem = addTab("Updates", updatesView())
         addTab("Changelog", textView(changeText, loadResource("CHANGELOG", fallback: fallbackChangelog())))
-        addTab("Hilfe", textView(helpText, loadResource("HELP_BLACKHOLE_DE", fallback: fallbackHelp())))
+        addTab("Help", textView(helpText, loadResource("HELP_BLACKHOLE_DE", fallback: fallbackHelp())))
         addTab("Logs", logsView())
 
         for popup in [discord.popup, xpilot.popup, output.popup] {
@@ -291,6 +366,10 @@ final class AppController: NSViewController {
         for slider in [discord.gain, xpilot.gain, output.gain, discord.pan, xpilot.pan] {
             slider.target = self
             slider.action = #selector(configChanged)
+        }
+        for control in discordLeveler.controls + xpilotLeveler.controls {
+            control.target = self
+            control.action = #selector(levelerChanged)
         }
         discord.pan.doubleValue = -1
         xpilot.pan.doubleValue = 1
@@ -334,7 +413,7 @@ final class AppController: NSViewController {
             row.addArrangedSubview(block)
         }
         stack.addArrangedSubview(row)
-        let note = NSTextField(wrappingLabelWithString: "Qualität: Standard ist stabiler 48-kHz-Safe-Mode mit größerem Puffer. Bei Stottern bitte zuerst 'Audio stabilisieren' klicken und in Audio-MIDI-Setup alle Geräte auf 48.000 Hz stellen.")
+        let note = NSTextField(wrappingLabelWithString: "Quality: the default profile uses a stable 48 kHz safe mode with a larger buffer. If audio crackles, click 'Stabilize Audio' first and set all involved devices to 48,000 Hz in Audio MIDI Setup.")
         note.textColor = .secondaryLabelColor
         stack.addArrangedSubview(note)
         return view
@@ -352,15 +431,26 @@ final class AppController: NSViewController {
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18)
         ])
-        let title = NSTextField(labelWithString: "xPilot Funk-Ausgleich")
-        title.font = .boldSystemFont(ofSize: 18)
+        let title = NSTextField(labelWithString: "Channel Leveling")
+        title.font = .boldSystemFont(ofSize: 20)
+        title.alignment = .center
         stack.addArrangedSubview(title)
-        let body = NSTextField(wrappingLabelWithString: "Gleicht nur den xPilot-Kanal automatisch aus. Zu laute VATSIM-Stationen werden schnell abgesenkt, zu leise Stationen vorsichtig angehoben. Der Master-Limiter bleibt zusätzlich aktiv.")
+        let body = NSTextField(wrappingLabelWithString: "Automatic leveling now works on both Discord channel 1 and xPilot channel 2. Each channel can be tuned independently, while the master limiter still catches final peaks.")
+        body.alignment = .center
         stack.addArrangedSubview(body)
-        levelerInfo.stringValue = "Aktueller xPilot-Pegel: -120 dB    Auto-Korrektur: 0 dB"
+        let panels = NSStackView()
+        panels.orientation = .horizontal
+        panels.spacing = 12
+        panels.distribution = .fillEqually
+        panels.addArrangedSubview(discordLeveler)
+        panels.addArrangedSubview(xpilotLeveler)
+        stack.addArrangedSubview(panels)
+        levelerInfo.stringValue = "Discord: -120 dB / 0 dB correction    xPilot: -120 dB / 0 dB correction"
+        levelerInfo.alignment = .center
         stack.addArrangedSubview(levelerInfo)
-        let recommendation = NSTextField(wrappingLabelWithString: "Empfehlung: Standard aktiv lassen. Bei Funk-Rauschen Gate nicht zu niedrig setzen. Technische Werte werden später in 'Erweitert' verschoben.")
+        let recommendation = NSTextField(wrappingLabelWithString: "Tip: keep the target around -21 dB for natural speech. Use faster response for busy radio, slower response for smoother Discord voices.")
         recommendation.textColor = .secondaryLabelColor
+        recommendation.alignment = .center
         stack.addArrangedSubview(recommendation)
         return view
     }
@@ -378,19 +468,23 @@ final class AppController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18)
         ])
-        updateStatus.stringValue = "Installiert: \(ADBVersion)."
+        let intro = NSTextField(wrappingLabelWithString: "✓ Updates are checked against the latest GitHub release.\n→ When a newer release is available, the Updates tab turns blue and Install Update becomes available.\n! If this version is current, no update needs to be installed.")
+        intro.textColor = .secondaryLabelColor
+        intro.font = .systemFont(ofSize: 13)
+        stack.addArrangedSubview(intro)
+        updateStatus.stringValue = "Installed: \(ADBVersion)."
         updateStatus.textColor = .secondaryLabelColor
         stack.addArrangedSubview(updateStatus)
         let row = NSStackView()
         row.orientation = .horizontal
         row.spacing = 8
-        row.addArrangedSubview(button("Jetzt auf GitHub prüfen", #selector(checkUpdatesClicked)))
+        row.addArrangedSubview(button("Check GitHub", #selector(checkUpdatesClicked)))
         updateButton.target = self
         updateButton.action = #selector(installUpdateClicked)
         updateButton.bezelStyle = .rounded
         updateButton.isEnabled = false
         row.addArrangedSubview(updateButton)
-        row.addArrangedSubview(button("Release-Seite öffnen", #selector(openReleases)))
+        row.addArrangedSubview(button("Open Release Page", #selector(openReleases)))
         stack.addArrangedSubview(row)
         stack.addArrangedSubview(textView(NSTextView(), loadResource("CHANGELOG", fallback: fallbackChangelog())))
         return view
@@ -407,9 +501,9 @@ final class AppController: NSViewController {
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18)
         ])
-        stack.addArrangedSubview(button("Logs öffnen", #selector(openLogs)))
-        stack.addArrangedSubview(button("Log-ZIP erstellen", #selector(exportLogs)))
-        stack.addArrangedSubview(button("Hängende Prozesse beenden", #selector(killStale)))
+        stack.addArrangedSubview(button("Open Logs", #selector(openLogs)))
+        stack.addArrangedSubview(button("Create Log ZIP", #selector(exportLogs)))
+        stack.addArrangedSubview(button("Stop Stale Processes", #selector(killStale)))
         return view
     }
 
@@ -419,8 +513,8 @@ final class AppController: NSViewController {
         textView.string = text
         textView.textColor = .labelColor
         textView.backgroundColor = .textBackgroundColor
-        textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.font = .systemFont(ofSize: 14)
+        textView.textContainerInset = NSSize(width: 18, height: 18)
         textView.autoresizingMask = [.width]
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -436,8 +530,8 @@ final class AppController: NSViewController {
         return fallback
     }
 
-    func fallbackHelp() -> String { "BlackHole Routing:\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> Kopfhörer/Audiointerface\n\nKein Multi-Output mit Kopfhörer verwenden, sonst läuft Audio am Limiter vorbei.\n\nAlle Geräte sollten in Audio-MIDI-Setup auf 48.000 Hz stehen." }
-    func fallbackChangelog() -> String { "# Changelog\n\n## 0.5.9\n- PKG-Installation nach /Applications repariert\n- Audio-Basis aus 0.5.6 bleibt erhalten\n- Update- und Installer-Prüfungen bleiben aktiv" }
+    func fallbackHelp() -> String { "BlackHole Routing\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\nDo not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\nSet all involved devices to 48,000 Hz in Audio MIDI Setup." }
+    func fallbackChangelog() -> String { "AudioDaBitch Changelog\n\n0.5.10\n- English app interface and in-app documents\n- Discord channel 1 automatic leveling added\n- Leveling controls for Discord and xPilot" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
@@ -449,7 +543,52 @@ final class AppController: NSViewController {
     @objc func openReleases() { NSWorkspace.shared.open(ADBReleasePageURL) }
     @objc func openLogs() { ensureDir(logDir()); NSWorkspace.shared.open(logDir()) }
     @objc func exportLogs() { ensureDir(logDir()); let dest = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/AudioDaBitch_Logs_\(Int(Date().timeIntervalSince1970)).zip"); _ = EngineManager.shared.shell("/usr/bin/zip", ["-r", dest.path, logDir().path, appSupportDir().path]); NSWorkspace.shared.activateFileViewerSelecting([dest]) }
-    @objc func killStale() { EngineManager.shared.cleanupStale(); status.stringValue = "Hängende Prozesse bereinigt" }
+    @objc func killStale() { EngineManager.shared.cleanupStale(); status.stringValue = "Stale processes stopped" }
+    @objc func levelerChanged() {
+        discordLeveler.updateLabels()
+        xpilotLeveler.updateLabels()
+        EngineManager.shared.post("/config", body: levelerConfigBody()) { _ in }
+    }
+
+    func levelerConfigBody() -> [String: Any] {
+        [
+            "discordLevelerEnabled": discordLeveler.enabled.state == .on,
+            "discordLevelerTargetDb": discordLeveler.target.doubleValue,
+            "discordLevelerMaxBoostDb": discordLeveler.maxBoost.doubleValue,
+            "discordLevelerMaxCutDb": discordLeveler.maxCut.doubleValue,
+            "discordLevelerSpeed": discordLeveler.speed.doubleValue,
+            "xpilotLevelerEnabled": xpilotLeveler.enabled.state == .on,
+            "xpilotLevelerTargetDb": xpilotLeveler.target.doubleValue,
+            "xpilotLevelerMaxBoostDb": xpilotLeveler.maxBoost.doubleValue,
+            "xpilotLevelerMaxCutDb": xpilotLeveler.maxCut.doubleValue,
+            "xpilotLevelerSpeed": xpilotLeveler.speed.doubleValue
+        ]
+    }
+
+    func loadConfigIntoUI() {
+        EngineManager.shared.get("/config") { data in
+            DispatchQueue.main.async {
+                guard let data,
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let cfg = obj["config"] as? [String: Any] else { return }
+                self.applyLevelerConfig(cfg)
+            }
+        }
+    }
+
+    func applyLevelerConfig(_ cfg: [String: Any]) {
+        applyLevelerPanel(discordLeveler, prefix: "discord", cfg: cfg)
+        applyLevelerPanel(xpilotLeveler, prefix: "xpilot", cfg: cfg)
+    }
+
+    func applyLevelerPanel(_ panel: LevelerPanel, prefix: String, cfg: [String: Any]) {
+        if let enabled = cfg["\(prefix)LevelerEnabled"] as? Bool { panel.enabled.state = enabled ? .on : .off }
+        if let target = cfg["\(prefix)LevelerTargetDb"] as? Double { panel.target.doubleValue = target }
+        if let boost = cfg["\(prefix)LevelerMaxBoostDb"] as? Double { panel.maxBoost.doubleValue = boost }
+        if let cut = cfg["\(prefix)LevelerMaxCutDb"] as? Double { panel.maxCut.doubleValue = cut }
+        if let speed = cfg["\(prefix)LevelerSpeed"] as? Double { panel.speed.doubleValue = speed }
+        panel.updateLabels()
+    }
 
     func setUpdateBadge(_ enabled: Bool) {
         updateTabItem?.label = enabled ? "🔵 Updates" : "Updates"
@@ -459,7 +598,7 @@ final class AppController: NSViewController {
 
     func checkForUpdates(silent: Bool) {
         if !silent {
-            updateStatus.stringValue = "Suche nach neuem Release..."
+            updateStatus.stringValue = "Checking GitHub releases..."
             updateStatus.textColor = .secondaryLabelColor
         }
         var request = URLRequest(url: ADBLatestReleaseURL)
@@ -468,13 +607,13 @@ final class AppController: NSViewController {
             DispatchQueue.main.async {
                 if let error {
                     if !silent {
-                        self.updateStatus.stringValue = "Update-Prüfung fehlgeschlagen: \(error.localizedDescription)"
+                        self.updateStatus.stringValue = "Update check failed: \(error.localizedDescription)"
                     }
                     self.setUpdateBadge(false)
                     return
                 }
                 guard let data, let release = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
-                    if !silent { self.updateStatus.stringValue = "GitHub-Release konnte nicht gelesen werden." }
+                    if !silent { self.updateStatus.stringValue = "Could not read the GitHub release." }
                     self.setUpdateBadge(false)
                     return
                 }
@@ -482,18 +621,18 @@ final class AppController: NSViewController {
                 let version = release.tagName.replacingOccurrences(of: "^v", with: "", options: .regularExpression)
                 guard isVersion(version, newerThan: ADBVersion) else {
                     self.latestAssetURL = nil
-                    self.updateStatus.stringValue = "Installiert: \(ADBVersion). Kein neueres Release gefunden."
+                    self.updateStatus.stringValue = "Installed: \(ADBVersion). No newer release found."
                     self.setUpdateBadge(false)
                     return
                 }
                 guard let asset = release.assets.first(where: { $0.name == ADBUpdateAssetName }), let url = URL(string: asset.browserDownloadURL) else {
                     self.latestAssetURL = nil
-                    self.updateStatus.stringValue = "Release \(release.tagName) gefunden, aber \(ADBUpdateAssetName) fehlt."
+                    self.updateStatus.stringValue = "Release \(release.tagName) was found, but \(ADBUpdateAssetName) is missing."
                     self.setUpdateBadge(false)
                     return
                 }
                 self.latestAssetURL = url
-                self.updateStatus.stringValue = "Update verfügbar: \(release.tagName)."
+                self.updateStatus.stringValue = "Update available: \(release.tagName)."
                 self.setUpdateBadge(true)
             }
         }.resume()
@@ -505,7 +644,7 @@ final class AppController: NSViewController {
             return
         }
         updateButton.isEnabled = false
-        updateStatus.stringValue = "Download läuft..."
+        updateStatus.stringValue = "Downloading update..."
         let updateDir = appSupportDir().appendingPathComponent("Updates", isDirectory: true)
         ensureDir(updateDir)
         let version = latestRelease?.tagName ?? "latest"
@@ -513,14 +652,14 @@ final class AppController: NSViewController {
         URLSession.shared.downloadTask(with: assetURL) { tempURL, _, error in
             if let error {
                 DispatchQueue.main.async {
-                    self.updateStatus.stringValue = "Download fehlgeschlagen: \(error.localizedDescription)"
+                    self.updateStatus.stringValue = "Download failed: \(error.localizedDescription)"
                     self.updateButton.isEnabled = true
                 }
                 return
             }
             guard let tempURL else {
                 DispatchQueue.main.async {
-                    self.updateStatus.stringValue = "Download fehlgeschlagen: keine Datei erhalten."
+                    self.updateStatus.stringValue = "Download failed: no file was received."
                     self.updateButton.isEnabled = true
                 }
                 return
@@ -531,7 +670,7 @@ final class AppController: NSViewController {
                 DispatchQueue.main.async { self.startInstallerAndQuit(pkgURL: destination) }
             } catch {
                 DispatchQueue.main.async {
-                    self.updateStatus.stringValue = "Download konnte nicht gespeichert werden: \(error.localizedDescription)"
+                    self.updateStatus.stringValue = "Could not save the download: \(error.localizedDescription)"
                     self.updateButton.isEnabled = true
                 }
             }
@@ -539,7 +678,7 @@ final class AppController: NSViewController {
     }
 
     func startInstallerAndQuit(pkgURL: URL) {
-        updateStatus.stringValue = "Engine wird gestoppt, Installer startet..."
+        updateStatus.stringValue = "Stopping engine and opening installer..."
         EngineManager.shared.stop()
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -558,7 +697,7 @@ fi
             try helper.run()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApp.terminate(nil) }
         } catch {
-            updateStatus.stringValue = "Installer konnte nicht gestartet werden: \(error.localizedDescription)"
+            updateStatus.stringValue = "Could not open the installer: \(error.localizedDescription)"
             updateButton.isEnabled = true
         }
     }
@@ -568,8 +707,8 @@ fi
     func pollHealth() {
         EngineManager.shared.get("/health") { data in
             DispatchQueue.main.async {
-                guard let data, let health = try? JSONDecoder().decode(HealthResponse.self, from: data) else { self.status.stringValue = "Engine nicht erreichbar"; return }
-                if health.sounddevice == false { self.status.stringValue = "Audio-Komponenten fehlen: \(health.error ?? "")" } else { self.status.stringValue = "Engine bereit \(health.version ?? "")" }
+                guard let data, let health = try? JSONDecoder().decode(HealthResponse.self, from: data) else { self.status.stringValue = "Engine unavailable"; return }
+                if health.sounddevice == false { self.status.stringValue = "Audio components missing: \(health.error ?? "")" } else { self.status.stringValue = "Engine ready \(health.version ?? "")" }
             }
         }
     }
@@ -577,11 +716,11 @@ fi
     func fetchDevices() {
         EngineManager.shared.get("/devices") { data in
             DispatchQueue.main.async {
-                guard let data, let response = try? JSONDecoder().decode(DevicesResponse.self, from: data) else { self.deviceError.stringValue = "/devices konnte nicht gelesen werden"; return }
+                guard let data, let response = try? JSONDecoder().decode(DevicesResponse.self, from: data) else { self.deviceError.stringValue = "Could not read /devices"; return }
                 self.populate(self.discord.popup, response.inputs)
                 self.populate(self.xpilot.popup, response.inputs)
                 self.populate(self.output.popup, response.outputs)
-                if let error = response.error, !error.isEmpty { self.deviceError.stringValue = "Gerätefehler: \(error)" } else { self.deviceError.stringValue = response.inputs.isEmpty || response.outputs.isEmpty ? "Keine Audio-Geräte gefunden" : "" }
+                if let error = response.error, !error.isEmpty { self.deviceError.stringValue = "Device error: \(error)" } else { self.deviceError.stringValue = response.inputs.isEmpty || response.outputs.isEmpty ? "No audio devices found" : "" }
             }
         }
     }
@@ -589,7 +728,7 @@ fi
     func populate(_ popup: NSPopUpButton, _ devices: [Device]) {
         let old = popup.selectedItem?.representedObject as? Int
         popup.removeAllItems()
-        popup.addItem(withTitle: "Bitte auswählen")
+        popup.addItem(withTitle: "Select a device")
         popup.lastItem?.representedObject = -1
         for device in devices {
             popup.addItem(withTitle: "\(device.name)  (#\(device.id))")
@@ -605,9 +744,9 @@ fi
                 self.discord.meter.valueDb = state.meters?.discord ?? -120
                 self.xpilot.meter.valueDb = state.meters?.xpilot ?? -120
                 self.output.meter.valueDb = state.meters?.output ?? -120
-                self.levelerInfo.stringValue = "Aktueller xPilot-Pegel: \(Int(state.meters?.xpilot ?? -120)) dB    Auto-Korrektur: \(Int(state.levelerGainDb ?? 0)) dB"
+                self.levelerInfo.stringValue = "Discord: \(Int(state.meters?.discord ?? -120)) dB / \(Int(state.discordLevelerGainDb ?? 0)) dB correction    xPilot: \(Int(state.meters?.xpilot ?? -120)) dB / \(Int(state.xpilotLevelerGainDb ?? state.levelerGainDb ?? 0)) dB correction"
                 if let diag = state.diagnostics {
-                    self.diagnosticsLabel.stringValue = "Audio: \(diag.sampleRate ?? 0) Hz · Block \(diag.blockSize ?? 0) · Latenz \(diag.latency ?? "-") · Callback-Fehler \(diag.callbackErrors ?? 0)"
+                    self.diagnosticsLabel.stringValue = "Audio: \(diag.sampleRate ?? 0) Hz · Block \(diag.blockSize ?? 0) · Latency \(diag.latency ?? "-") · Callback errors \(diag.callbackErrors ?? 0)"
                 }
             }
         }
@@ -626,6 +765,9 @@ fi
         body["masterGainDb"] = output.gain.doubleValue
         body["discordPan"] = discord.pan.doubleValue
         body["xpilotPan"] = xpilot.pan.doubleValue
+        for (key, value) in levelerConfigBody() {
+            body[key] = value
+        }
         body["safeMode"] = true
         body["sampleRate"] = 48000
         body["blockSize"] = 1024
@@ -639,7 +781,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AudioDaBitch \(ADBVersion) started")
         let vc = AppController()
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 660), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.center()
         window.title = "AudioDaBitch"
         window.contentViewController = vc
@@ -649,11 +791,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "AudioDaBitch beenden?"
-        alert.informativeText = "Beenden stoppt die Audio-Engine. Minimieren lässt AudioDaBitch geöffnet."
-        alert.addButton(withTitle: "Beenden")
-        alert.addButton(withTitle: "Minimieren")
-        alert.addButton(withTitle: "Abbrechen")
+        alert.messageText = "Quit AudioDaBitch?"
+        alert.informativeText = "Quitting stops the audio engine. Minimize keeps AudioDaBitch running."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Minimize")
+        alert.addButton(withTitle: "Cancel")
         let response = alert.runModal()
         if response == .alertFirstButtonReturn { EngineManager.shared.stop(); NSApp.terminate(nil); return false }
         if response == .alertSecondButtonReturn { sender.miniaturize(nil); return false }

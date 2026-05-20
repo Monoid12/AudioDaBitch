@@ -1,9 +1,9 @@
-# AudioDaBitch 0.5.9
+# AudioDaBitch 0.5.10
 
-Installer-Fix für macOS PackageKit.
+English UI and dual channel leveling.
 
-- Repariert die PKG-Installation nach `/Applications/AudioDaBitch.app`.
-- Verhindert, dass macOS PackageKit `AudioDaBitch.app` an alte lokale Build-Pfade relocated.
-- PKG-Build setzt das App-Bundle explizit auf nicht relocatable.
-- Audio-Engine bleibt auf der stabilen 0.5.8/0.5.6-Basis mit funktionierendem `sounddevice==0.5.5`-Bootstrap.
-- In-App-Update, Changelog und Hilfe bleiben aus 0.5.8 erhalten.
+- All visible app labels, buttons, status messages and in-app documents are now English.
+- Discord channel 1 now uses the same automatic leveling logic as xPilot channel 2.
+- The Leveling tab now includes tuning controls for Discord and xPilot: enable, target loudness, maximum boost, maximum cut and response speed.
+- Updates, Changelog and Help were rewritten with clearer headings and symbols.
+- The stable 0.5.9 installer fix and 0.5.6 audio base remain in place.

@@ -1,47 +1,51 @@
-# Hilfe / BlackHole Routing
+AudioDaBitch Help / BlackHole Routing
+====================================
 
-## Ziel
+Goal
+----
+Route Discord and xPilot into virtual BlackHole devices first. AudioDaBitch then applies channel leveling, ducking, panning and limiting before anything reaches your headphones.
 
-Discord und xPilot sollen zuerst in virtuelle BlackHole-Geräte laufen. AudioDaBitch verarbeitet beide Quellen, macht Ducking, Panning, Leveling und Limiting und gibt erst danach auf den Kopfhörer aus.
+Signal Flow
+-----------
+Discord  -> BlackHole 2ch  -> AudioDaBitch Discord channel 1 -> Output
+xPilot   -> BlackHole 16ch -> AudioDaBitch xPilot channel 2  -> Output
+Output   -> Headphones, headset or audio interface
 
-## Richtiger Signalfluss
+Important
+---------
+! Do not use a Multi-Output device with your headphones.
+  That creates a direct path around the limiter, so loud audio can bypass AudioDaBitch.
 
-Discord -> BlackHole 2ch -> AudioDaBitch Discord -> Output
+Recommended macOS Audio MIDI Setup
+----------------------------------
+* BlackHole 2ch: 48,000 Hz
+* BlackHole 16ch: 48,000 Hz
+* Headphones / headset / audio interface: 48,000 Hz when available
 
-xPilot -> BlackHole 16ch -> AudioDaBitch xPilot -> Output
+Discord
+-------
+* Input Device: your normal microphone
+* Output Device: BlackHole 2ch
+* AudioDaBitch Discord Input: BlackHole 2ch
 
-AudioDaBitch Output -> Kopfhörer / Headset / Audiointerface
+xPilot
+------
+* Microphone/Input: your normal microphone
+* Headset Device: BlackHole 16ch
+* Speaker Device: BlackHole 16ch
+* AudioDaBitch xPilot Input: BlackHole 16ch
 
-## Wichtig
+Leveling
+--------
+* Discord channel 1 and xPilot channel 2 can now be leveled independently.
+* Target loudness controls the speech level each channel tries to reach.
+* Maximum boost limits how much quiet voices may be raised.
+* Maximum cut limits how strongly loud voices may be reduced.
+* Response speed controls how quickly the correction reacts.
 
-Kein Multi-Output-Gerät mit Kopfhörer verwenden. Sonst hörst du Discord oder xPilot zusätzlich direkt und der Limiter wirkt nicht vollständig.
-
-## Empfohlene macOS Audio-MIDI-Einstellung
-
-- BlackHole 2ch: 48.000 Hz
-- BlackHole 16ch: 48.000 Hz
-- Kopfhörer / Headset / Audiointerface: 48.000 Hz, falls verfügbar
-
-## Discord
-
-- Input Device: normales Mikrofon
-- Output Device: BlackHole 2ch
-
-## xPilot
-
-- Microphone/Input: normales Mikrofon
-- Headset Device: BlackHole 16ch
-- Speaker Device: BlackHole 16ch
-
-## AudioDaBitch
-
-- Discord Input: BlackHole 2ch
-- xPilot Input: BlackHole 16ch
-- Output: echter Kopfhörer / Headset / Audiointerface
-
-## Wenn Audio stottert
-
-1. In AudioDaBitch auf „Audio stabilisieren“ klicken.
-2. In Audio-MIDI-Setup alle beteiligten Geräte auf 48.000 Hz stellen.
-3. Bluetooth/AirPods testweise vermeiden, wenn besonders niedrige Latenz gebraucht wird.
-4. Logs -> Log-ZIP erstellen und schicken.
+If Audio Crackles
+-----------------
+1. Click Stabilize Audio.
+2. Set all involved devices to 48,000 Hz in Audio MIDI Setup.
+3. Avoid Bluetooth headphones when low latency matters.
+4. Open Logs and create a Log ZIP if you need to send diagnostics.

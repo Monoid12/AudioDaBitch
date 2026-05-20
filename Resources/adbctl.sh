@@ -65,7 +65,7 @@ kill_existing_engines() {
 }
 
 setup_env() {
-  find_python || fail_json "Python 3.9 oder neuer wurde nicht gefunden. Bitte Python 3 von python.org oder Homebrew installieren."
+  find_python || fail_json "Python 3.9 or newer was not found. Please install Python 3 from python.org or Homebrew."
   PY_ID="$(base_python -c 'import sys,platform; print(platform.machine()+"|"+str(sys.version_info[0])+"."+str(sys.version_info[1])+"."+str(sys.version_info[2]))' 2>/dev/null || echo unknown)"
   NEED_SETUP="0"
   if [ ! -x "$VENV_DIR/bin/python" ]; then NEED_SETUP="1"; fi
@@ -88,7 +88,7 @@ setup_env() {
       venv_python -m pip install --upgrade "numpy>=2.0,<3" "sounddevice>=0.5,<0.6"
       echo "$PY_ID" > "$MARKER_FILE"
       echo "---- $(date) Setup done ----"
-    } >> "$LOG_FILE" 2>&1 || fail_json "Setup der Audio-Komponenten ist fehlgeschlagen. Details: $LOG_FILE"
+    } >> "$LOG_FILE" 2>&1 || fail_json "Audio component setup failed. Details: $LOG_FILE"
   fi
 }
 
@@ -98,7 +98,7 @@ case "$cmd" in
     setup_env
     OUT="$(venv_python "$ENGINE" --list-devices 2>>"$LOG_FILE")" || {
       echo "$OUT" >> "$LOG_FILE"
-      fail_json "Audiogeraete konnten nicht gelesen werden. Details: $LOG_FILE"
+      fail_json "Audio devices could not be read. Details: $LOG_FILE"
     }
     echo "$OUT" >> "$LOG_FILE"
     printf '%s\n' "$OUT" | tail -n 1
@@ -106,9 +106,9 @@ case "$cmd" in
   start)
     setup_env
     CONFIG="${2:-}"; LEVELS="${3:-}"; PIDFILE="${4:-}"
-    [ -n "$CONFIG" ] || fail_json "Config fehlt."
-    [ -n "$LEVELS" ] || fail_json "Level-Datei fehlt."
-    [ -n "$PIDFILE" ] || fail_json "PID-Datei fehlt."
+    [ -n "$CONFIG" ] || fail_json "Config is missing."
+    [ -n "$LEVELS" ] || fail_json "Level file is missing."
+    [ -n "$PIDFILE" ] || fail_json "PID file is missing."
     kill_existing_engines
     nohup "$VENV_DIR/bin/python" "$ENGINE" --run "$CONFIG" "$LEVELS" "$PIDFILE" >> "$ENGINE_LOG" 2>&1 &
     child="$!"
@@ -116,7 +116,7 @@ case "$cmd" in
     if kill -0 "$child" >/dev/null 2>&1; then
       printf '{"ok":true,"pid":%s}\n' "$child"
     else
-      fail_json "Audio-Engine konnte nicht gestartet werden. Details: $ENGINE_LOG"
+      fail_json "Audio engine could not be started. Details: $ENGINE_LOG"
     fi
     ;;
   stop)
@@ -137,6 +137,6 @@ case "$cmd" in
     printf '{"ok":true,"log_dir":"%s"}\n' "$LOG_DIR"
     ;;
   *)
-    fail_json "Unbekannter Befehl: $cmd"
+    fail_json "Unknown command: $cmd"
     ;;
 esac
