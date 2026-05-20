@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.10"
+let ADBVersion = "0.5.11"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -29,8 +29,9 @@ struct Device: Codable { let id: Int; let name: String; let inputs: Int?; let ou
 struct DevicesResponse: Codable { let inputs: [Device]; let outputs: [Device]; let error: String? }
 struct HealthResponse: Codable { let ok: Bool; let version: String?; let sounddevice: Bool?; let error: String? }
 struct Meters: Codable { let discord: Double?; let xpilot: Double?; let output: Double? }
-struct Diagnostics: Codable { let sampleRate: Int?; let blockSize: Int?; let latency: String?; let callbackErrors: Int?; let lastError: String? }
-struct StateResponse: Codable { let ok: Bool; let version: String?; let running: Bool?; let meters: Meters?; let levelerGainDb: Double?; let discordLevelerGainDb: Double?; let xpilotLevelerGainDb: Double?; let diagnostics: Diagnostics? }
+struct BufferDiagnostics: Codable { let queuedMs: Double?; let droppedMs: Double?; let highWaterMs: Double? }
+struct Diagnostics: Codable { let sampleRate: Int?; let blockSize: Int?; let latency: String?; let callbackErrors: Int?; let lastError: String?; let discord: BufferDiagnostics?; let xpilot: BufferDiagnostics? }
+struct StateResponse: Codable { let ok: Bool; let version: String?; let running: Bool?; let meters: Meters?; let levelerGainDb: Double?; let discordLevelerGainDb: Double?; let xpilotLevelerGainDb: Double?; let discordDuckGainDb: Double?; let xpilotDuckGainDb: Double?; let diagnostics: Diagnostics? }
 struct GitHubAsset: Codable { let name: String; let browserDownloadURL: String; enum CodingKeys: String, CodingKey { case name; case browserDownloadURL = "browser_download_url" } }
 struct GitHubRelease: Codable { let tagName: String; let htmlURL: String?; let assets: [GitHubAsset]; enum CodingKeys: String, CodingKey { case tagName = "tag_name"; case htmlURL = "html_url"; case assets } }
 
@@ -217,10 +218,10 @@ final class BlockView: NSBox {
 
 final class LevelerPanel: NSBox {
     let enabled = NSButton(checkboxWithTitle: "Enable leveling", target: nil, action: nil)
-    let target = NSSlider(value: -21, minValue: -36, maxValue: -12, target: nil, action: nil)
-    let maxBoost = NSSlider(value: 12, minValue: 0, maxValue: 18, target: nil, action: nil)
-    let maxCut = NSSlider(value: -18, minValue: -30, maxValue: 0, target: nil, action: nil)
-    let speed = NSSlider(value: 45, minValue: 1, maxValue: 100, target: nil, action: nil)
+    let target = NSSlider(value: -20, minValue: -36, maxValue: -12, target: nil, action: nil)
+    let maxBoost = NSSlider(value: 15, minValue: 0, maxValue: 18, target: nil, action: nil)
+    let maxCut = NSSlider(value: -24, minValue: -30, maxValue: 0, target: nil, action: nil)
+    let speed = NSSlider(value: 65, minValue: 1, maxValue: 100, target: nil, action: nil)
     let targetValue = NSTextField(labelWithString: "")
     let boostValue = NSTextField(labelWithString: "")
     let cutValue = NSTextField(labelWithString: "")
@@ -288,9 +289,82 @@ final class LevelerPanel: NSBox {
     }
 }
 
+final class DuckingPanel: NSBox {
+    let enabled = NSButton(checkboxWithTitle: "Enable xPilot priority ducking", target: nil, action: nil)
+    let threshold = NSSlider(value: -46, minValue: -70, maxValue: -20, target: nil, action: nil)
+    let depth = NSSlider(value: -24, minValue: -36, maxValue: -6, target: nil, action: nil)
+    let attack = NSSlider(value: 4, minValue: 1, maxValue: 80, target: nil, action: nil)
+    let release = NSSlider(value: 180, minValue: 60, maxValue: 600, target: nil, action: nil)
+    let thresholdValue = NSTextField(labelWithString: "")
+    let depthValue = NSTextField(labelWithString: "")
+    let attackValue = NSTextField(labelWithString: "")
+    let releaseValue = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        title = "xPilot priority ducking"
+        boxType = .custom
+        borderColor = .systemBlue
+        cornerRadius = 8
+        contentViewMargins = NSSize(width: 14, height: 14)
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 9
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView?.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView!.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView!.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentView!.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: contentView!.bottomAnchor)
+        ])
+        let detail = NSTextField(wrappingLabelWithString: "When xPilot audio is detected, Discord is reduced quickly so ATC stays clear. Release controls how fast Discord fades back in.")
+        detail.textColor = .secondaryLabelColor
+        detail.font = .systemFont(ofSize: 12)
+        enabled.state = .on
+        stack.addArrangedSubview(detail)
+        stack.addArrangedSubview(enabled)
+        stack.addArrangedSubview(controlRow("Trigger threshold", threshold, thresholdValue))
+        stack.addArrangedSubview(controlRow("Discord reduction", depth, depthValue))
+        stack.addArrangedSubview(controlRow("Attack", attack, attackValue))
+        stack.addArrangedSubview(controlRow("Release", release, releaseValue))
+        updateLabels()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    var controls: [NSControl] { [enabled, threshold, depth, attack, release] }
+
+    func controlRow(_ title: String, _ slider: NSSlider, _ value: NSTextField) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 130).isActive = true
+        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        value.alignment = .right
+        value.textColor = .secondaryLabelColor
+        value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        value.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(slider)
+        row.addArrangedSubview(value)
+        return row
+    }
+
+    func updateLabels() {
+        thresholdValue.stringValue = "\(Int(threshold.doubleValue.rounded())) dB"
+        depthValue.stringValue = "\(Int(depth.doubleValue.rounded())) dB"
+        attackValue.stringValue = "\(Int(attack.doubleValue.rounded())) ms"
+        releaseValue.stringValue = "\(Int(release.doubleValue.rounded())) ms"
+    }
+}
+
 final class AppController: NSViewController {
     let tabs = NSTabView()
-    let status = NSTextField(labelWithString: "Starte...")
+    let status = NSTextField(labelWithString: "Starting...")
     let diagnosticsLabel = NSTextField(labelWithString: "")
     let discord = BlockView(title: "Discord", hasPan: true)
     let xpilot = BlockView(title: "xPilot", hasPan: true)
@@ -299,6 +373,7 @@ final class AppController: NSViewController {
     let levelerInfo = NSTextField(labelWithString: "")
     let discordLeveler = LevelerPanel(title: "Discord channel 1", subtitle: "Keeps Discord voices steady before ducking, panning and limiting.")
     let xpilotLeveler = LevelerPanel(title: "xPilot channel 2", subtitle: "Balances VATSIM stations before the master limiter.")
+    let duckingPanel = DuckingPanel()
     let updateStatus = NSTextField(labelWithString: "Installed: \(ADBVersion)")
     let updateButton = NSButton(title: "Install Update", target: nil, action: nil)
     let helpText = NSTextView()
@@ -316,7 +391,7 @@ final class AppController: NSViewController {
         EngineManager.shared.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.loadConfigIntoUI(); self.refreshAll() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.checkForUpdates(silent: true) }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in self.pollState() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in self.pollState() }
     }
 
     func buildUI() {
@@ -367,7 +442,7 @@ final class AppController: NSViewController {
             slider.target = self
             slider.action = #selector(configChanged)
         }
-        for control in discordLeveler.controls + xpilotLeveler.controls {
+        for control in discordLeveler.controls + xpilotLeveler.controls + duckingPanel.controls {
             control.target = self
             control.action = #selector(levelerChanged)
         }
@@ -435,7 +510,7 @@ final class AppController: NSViewController {
         title.font = .boldSystemFont(ofSize: 20)
         title.alignment = .center
         stack.addArrangedSubview(title)
-        let body = NSTextField(wrappingLabelWithString: "Automatic leveling now works on both Discord channel 1 and xPilot channel 2. Each channel can be tuned independently, while the master limiter still catches final peaks.")
+        let body = NSTextField(wrappingLabelWithString: "Automatic leveling works on both Discord channel 1 and xPilot channel 2. xPilot priority ducking now has its own controls so ATC can cut through Discord immediately.")
         body.alignment = .center
         stack.addArrangedSubview(body)
         let panels = NSStackView()
@@ -445,10 +520,11 @@ final class AppController: NSViewController {
         panels.addArrangedSubview(discordLeveler)
         panels.addArrangedSubview(xpilotLeveler)
         stack.addArrangedSubview(panels)
+        stack.addArrangedSubview(duckingPanel)
         levelerInfo.stringValue = "Discord: -120 dB / 0 dB correction    xPilot: -120 dB / 0 dB correction"
         levelerInfo.alignment = .center
         stack.addArrangedSubview(levelerInfo)
-        let recommendation = NSTextField(wrappingLabelWithString: "Tip: keep the target around -21 dB for natural speech. Use faster response for busy radio, slower response for smoother Discord voices.")
+        let recommendation = NSTextField(wrappingLabelWithString: "Tip: keep the target around -20 dB for clear speech. Use faster response for busy radio, slower response for smoother Discord voices.")
         recommendation.textColor = .secondaryLabelColor
         recommendation.alignment = .center
         stack.addArrangedSubview(recommendation)
@@ -468,9 +544,13 @@ final class AppController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18)
         ])
-        let intro = NSTextField(wrappingLabelWithString: "✓ Updates are checked against the latest GitHub release.\n→ When a newer release is available, the Updates tab turns blue and Install Update becomes available.\n! If this version is current, no update needs to be installed.")
-        intro.textColor = .secondaryLabelColor
-        intro.font = .systemFont(ofSize: 13)
+        let title = NSTextField(labelWithString: "Update Center")
+        title.font = .systemFont(ofSize: 20, weight: .heavy)
+        title.textColor = .systemBlue
+        stack.addArrangedSubview(title)
+        let intro = NSTextField(wrappingLabelWithString: "✓ Checks the official GitHub release feed.\n→ A newer release turns this tab blue and enables Install Update.\n! If this version is current, no update needs to be installed.")
+        intro.textColor = .labelColor
+        intro.font = .systemFont(ofSize: 13, weight: .medium)
         stack.addArrangedSubview(intro)
         updateStatus.stringValue = "Installed: \(ADBVersion)."
         updateStatus.textColor = .secondaryLabelColor
@@ -510,9 +590,10 @@ final class AppController: NSViewController {
     func textView(_ textView: NSTextView, _ text: String) -> NSScrollView {
         textView.isEditable = false
         textView.isSelectable = true
-        textView.string = text
+        textView.isRichText = true
+        textView.textStorage?.setAttributedString(styledDocument(text))
         textView.textColor = .labelColor
-        textView.backgroundColor = .textBackgroundColor
+        textView.backgroundColor = .controlBackgroundColor
         textView.font = .systemFont(ofSize: 14)
         textView.textContainerInset = NSSize(width: 18, height: 18)
         textView.autoresizingMask = [.width]
@@ -525,19 +606,77 @@ final class AppController: NSViewController {
         return scroll
     }
 
+    func styledDocument(_ text: String) -> NSAttributedString {
+        let output = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        paragraph.paragraphSpacing = 8
+        let bulletParagraph = NSMutableParagraphStyle()
+        bulletParagraph.lineSpacing = 3
+        bulletParagraph.paragraphSpacing = 5
+        bulletParagraph.firstLineHeadIndent = 0
+        bulletParagraph.headIndent = 18
+        let base: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph
+        ]
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        for raw in lines {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            var attributes = base
+            if line.isEmpty {
+                output.append(NSAttributedString(string: "\n"))
+                continue
+            }
+            if line.hasPrefix("### ") {
+                line = "◼ " + String(line.dropFirst(4))
+                attributes[.font] = NSFont.systemFont(ofSize: 15, weight: .bold)
+                attributes[.foregroundColor] = NSColor.systemPurple
+            } else if line.hasPrefix("## ") {
+                line = "◆ " + String(line.dropFirst(3))
+                attributes[.font] = NSFont.systemFont(ofSize: 17, weight: .bold)
+                attributes[.foregroundColor] = NSColor.systemTeal
+            } else if line.hasPrefix("# ") {
+                line = "● " + String(line.dropFirst(2))
+                attributes[.font] = NSFont.systemFont(ofSize: 21, weight: .heavy)
+                attributes[.foregroundColor] = NSColor.systemBlue
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                line = "  • " + String(line.dropFirst(2))
+                attributes[.font] = NSFont.systemFont(ofSize: 14)
+                attributes[.foregroundColor] = NSColor.labelColor
+                attributes[.paragraphStyle] = bulletParagraph
+            } else if line.hasPrefix("! ") {
+                line = "⚠ " + String(line.dropFirst(2))
+                attributes[.font] = NSFont.systemFont(ofSize: 14, weight: .semibold)
+                attributes[.foregroundColor] = NSColor.systemOrange
+            } else if line.hasPrefix("✓ ") {
+                line = "✓ " + String(line.dropFirst(2))
+                attributes[.font] = NSFont.systemFont(ofSize: 14, weight: .semibold)
+                attributes[.foregroundColor] = NSColor.systemGreen
+            } else if line.hasPrefix("→ ") {
+                line = "→ " + String(line.dropFirst(2))
+                attributes[.font] = NSFont.systemFont(ofSize: 14, weight: .semibold)
+                attributes[.foregroundColor] = NSColor.systemBlue
+            }
+            output.append(NSAttributedString(string: line + "\n", attributes: attributes))
+        }
+        return output
+    }
+
     func loadResource(_ name: String, fallback: String) -> String {
         if let url = Bundle.main.url(forResource: name, withExtension: "md"), let text = try? String(contentsOf: url, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
         return fallback
     }
 
-    func fallbackHelp() -> String { "BlackHole Routing\n\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\nDo not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\nSet all involved devices to 48,000 Hz in Audio MIDI Setup." }
-    func fallbackChangelog() -> String { "AudioDaBitch Changelog\n\n0.5.10\n- English app interface and in-app documents\n- Discord channel 1 automatic leveling added\n- Leveling controls for Discord and xPilot" }
+    func fallbackHelp() -> String { "# BlackHole Routing\n\n## Signal Flow\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\n! Do not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\n## Audio MIDI Setup\nSet all involved devices to 48,000 Hz." }
+    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.11\n- Faster xPilot-priority ducking\n- Low-latency queue trimming\n- Lower Python callback overhead\n- Styled Updates, Changelog and Help tabs" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
     @objc func stopAudio() { EngineManager.shared.post("/stop", body: [:]) { _ in } }
     @objc func repairEngine() { EngineManager.shared.stop(); EngineManager.shared.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.refreshAll() } }
-    @objc func stabilizeAudio() { EngineManager.shared.post("/config", body: ["safeMode": true, "sampleRate": 48000, "blockSize": 1024, "latency": "high"]) { _ in EngineManager.shared.post("/stop", body: [:]) { _ in EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } } } }
+    @objc func stabilizeAudio() { EngineManager.shared.post("/config", body: ["safeMode": true, "sampleRate": 48000, "blockSize": 1024, "latency": "high", "bufferMaxMs": 120.0, "bufferTargetMs": 45.0]) { _ in EngineManager.shared.post("/stop", body: [:]) { _ in EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } } } }
     @objc func checkUpdatesClicked() { checkForUpdates(silent: false) }
     @objc func installUpdateClicked() { installUpdate() }
     @objc func openReleases() { NSWorkspace.shared.open(ADBReleasePageURL) }
@@ -547,6 +686,7 @@ final class AppController: NSViewController {
     @objc func levelerChanged() {
         discordLeveler.updateLabels()
         xpilotLeveler.updateLabels()
+        duckingPanel.updateLabels()
         EngineManager.shared.post("/config", body: levelerConfigBody()) { _ in }
     }
 
@@ -561,7 +701,15 @@ final class AppController: NSViewController {
             "xpilotLevelerTargetDb": xpilotLeveler.target.doubleValue,
             "xpilotLevelerMaxBoostDb": xpilotLeveler.maxBoost.doubleValue,
             "xpilotLevelerMaxCutDb": xpilotLeveler.maxCut.doubleValue,
-            "xpilotLevelerSpeed": xpilotLeveler.speed.doubleValue
+            "xpilotLevelerSpeed": xpilotLeveler.speed.doubleValue,
+            "duckingEnabled": duckingPanel.enabled.state == .on,
+            "duckingMode": "xpilot_ducks_discord",
+            "thresholdDb": duckingPanel.threshold.doubleValue,
+            "duckDepthDb": duckingPanel.depth.doubleValue,
+            "duckAttackMs": duckingPanel.attack.doubleValue,
+            "duckReleaseMs": duckingPanel.release.doubleValue,
+            "bufferMaxMs": 120.0,
+            "bufferTargetMs": 45.0
         ]
     }
 
@@ -579,6 +727,12 @@ final class AppController: NSViewController {
     func applyLevelerConfig(_ cfg: [String: Any]) {
         applyLevelerPanel(discordLeveler, prefix: "discord", cfg: cfg)
         applyLevelerPanel(xpilotLeveler, prefix: "xpilot", cfg: cfg)
+        if let enabled = cfg["duckingEnabled"] as? Bool { duckingPanel.enabled.state = enabled ? .on : .off }
+        if let threshold = cfg["thresholdDb"] as? Double { duckingPanel.threshold.doubleValue = threshold }
+        if let depth = cfg["duckDepthDb"] as? Double { duckingPanel.depth.doubleValue = depth }
+        if let attack = cfg["duckAttackMs"] as? Double { duckingPanel.attack.doubleValue = attack }
+        if let release = cfg["duckReleaseMs"] as? Double { duckingPanel.release.doubleValue = release }
+        duckingPanel.updateLabels()
     }
 
     func applyLevelerPanel(_ panel: LevelerPanel, prefix: String, cfg: [String: Any]) {
@@ -744,9 +898,12 @@ fi
                 self.discord.meter.valueDb = state.meters?.discord ?? -120
                 self.xpilot.meter.valueDb = state.meters?.xpilot ?? -120
                 self.output.meter.valueDb = state.meters?.output ?? -120
-                self.levelerInfo.stringValue = "Discord: \(Int(state.meters?.discord ?? -120)) dB / \(Int(state.discordLevelerGainDb ?? 0)) dB correction    xPilot: \(Int(state.meters?.xpilot ?? -120)) dB / \(Int(state.xpilotLevelerGainDb ?? state.levelerGainDb ?? 0)) dB correction"
+                self.levelerInfo.stringValue = "Discord: \(Int(state.meters?.discord ?? -120)) dB / \(Int(state.discordLevelerGainDb ?? 0)) dB level / \(Int(state.discordDuckGainDb ?? 0)) dB duck    xPilot: \(Int(state.meters?.xpilot ?? -120)) dB / \(Int(state.xpilotLevelerGainDb ?? state.levelerGainDb ?? 0)) dB level"
                 if let diag = state.diagnostics {
-                    self.diagnosticsLabel.stringValue = "Audio: \(diag.sampleRate ?? 0) Hz · Block \(diag.blockSize ?? 0) · Latency \(diag.latency ?? "-") · Callback errors \(diag.callbackErrors ?? 0)"
+                    let dQueue = Int((diag.discord?.queuedMs ?? 0).rounded())
+                    let xQueue = Int((diag.xpilot?.queuedMs ?? 0).rounded())
+                    let dropped = Int(((diag.discord?.droppedMs ?? 0) + (diag.xpilot?.droppedMs ?? 0)).rounded())
+                    self.diagnosticsLabel.stringValue = "Audio: \(diag.sampleRate ?? 0) Hz · Block \(diag.blockSize ?? 0) · Latency \(diag.latency ?? "-") · Queue D/X \(dQueue)/\(xQueue) ms · Dropped \(dropped) ms · Callback errors \(diag.callbackErrors ?? 0)"
                 }
             }
         }

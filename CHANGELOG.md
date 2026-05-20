@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.11
+
+- Tightened xPilot-priority ducking so Discord drops immediately when ATC audio appears.
+- Added visible ducking controls for trigger threshold, Discord reduction, attack and release.
+- Added low-latency buffer trimming to prevent queued xPilot audio from drifting late.
+- Reduced Python callback overhead with chunked audio buffers and a lighter output mixer.
+- Improved Discord and xPilot automatic leveling with RMS-based detection and faster correction.
+- Added queue and dropped-buffer diagnostics to make latency visible in the main window.
+- Made Updates, Changelog and Help more colorful with styled headings and symbols.
+
 ## 0.5.10
 
 - Converted all visible app labels, buttons, status messages and in-app documents to English.

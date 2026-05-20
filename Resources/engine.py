@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.10
+# AudioDaBitch Engine 0.5.11
 from __future__ import annotations
 
 import atexit
@@ -17,9 +17,9 @@ import venv
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
-ENGINE_VERSION = "0.5.10"
+ENGINE_VERSION = "0.5.11"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -103,15 +103,39 @@ def gain_to_db(gain: float) -> float:
     return max(-120.0, min(24.0, 20.0 * math.log10(gain)))
 
 
-def meter_db(samples: List[float]) -> float:
+def meter_db(samples: Any) -> float:
     if not samples:
         return -120.0
     peak = max(abs(x) for x in samples)
     return gain_to_db(peak)
 
 
+def audio_levels(samples: Any) -> Tuple[float, float]:
+    if not samples:
+        return -120.0, -120.0
+    peak = 0.0
+    total = 0.0
+    count = 0
+    for sample in samples:
+        value = float(sample)
+        magnitude = abs(value)
+        if magnitude > peak:
+            peak = magnitude
+        total += value * value
+        count += 1
+    if count <= 0:
+        return -120.0, -120.0
+    return gain_to_db(peak), gain_to_db(math.sqrt(total / count))
+
+
+def smoothing_alpha(block_ms: float, tau_ms: float) -> float:
+    tau = max(1.0, tau_ms)
+    return max(0.0, min(1.0, 1.0 - math.exp(-max(1.0, block_ms) / tau)))
+
+
 def default_config() -> Dict[str, Any]:
     return {
+        "configVersion": ENGINE_VERSION,
         "discordInput": None,
         "xpilotInput": None,
         "outputDevice": None,
@@ -122,20 +146,24 @@ def default_config() -> Dict[str, Any]:
         "xpilotPan": 1.0,
         "duckingEnabled": True,
         "duckingMode": "xpilot_ducks_discord",
-        "duckDepthDb": -12.0,
-        "thresholdDb": -32.0,
+        "duckDepthDb": -24.0,
+        "thresholdDb": -46.0,
+        "duckAttackMs": 4.0,
+        "duckReleaseMs": 180.0,
         "limiterCeilingDb": -1.0,
         "discordLevelerEnabled": True,
-        "discordLevelerTargetDb": -21.0,
-        "discordLevelerMaxBoostDb": 12.0,
-        "discordLevelerMaxCutDb": -18.0,
-        "discordLevelerSpeed": 45.0,
+        "discordLevelerTargetDb": -20.0,
+        "discordLevelerMaxBoostDb": 15.0,
+        "discordLevelerMaxCutDb": -24.0,
+        "discordLevelerSpeed": 65.0,
         "xpilotLevelerEnabled": True,
         "xpilotLevelerPreset": "standard",
-        "xpilotLevelerTargetDb": -21.0,
-        "xpilotLevelerMaxBoostDb": 12.0,
-        "xpilotLevelerMaxCutDb": -18.0,
-        "xpilotLevelerSpeed": 45.0,
+        "xpilotLevelerTargetDb": -20.0,
+        "xpilotLevelerMaxBoostDb": 15.0,
+        "xpilotLevelerMaxCutDb": -24.0,
+        "xpilotLevelerSpeed": 70.0,
+        "bufferMaxMs": 120.0,
+        "bufferTargetMs": 45.0,
         "safeMode": True,
         "sampleRate": 48000,
         "blockSize": 1024,
@@ -146,17 +174,50 @@ CONFIG_LOCK = threading.RLock()
 CONFIG = default_config()
 
 
+def migrate_config_if_needed(existing: Dict[str, Any]) -> None:
+    if str(existing.get("configVersion", "")) == ENGINE_VERSION:
+        return
+
+    def replace_old(key: str, old: float, new: float) -> None:
+        try:
+            if key not in existing or abs(float(existing.get(key, old)) - old) < 0.001:
+                CONFIG[key] = new
+        except Exception:
+            CONFIG[key] = new
+
+    replace_old("duckDepthDb", -12.0, -24.0)
+    replace_old("thresholdDb", -32.0, -46.0)
+    replace_old("discordLevelerTargetDb", -21.0, -20.0)
+    replace_old("discordLevelerMaxBoostDb", 12.0, 15.0)
+    replace_old("discordLevelerMaxCutDb", -18.0, -24.0)
+    replace_old("discordLevelerSpeed", 45.0, 65.0)
+    replace_old("xpilotLevelerTargetDb", -21.0, -20.0)
+    replace_old("xpilotLevelerMaxBoostDb", 12.0, 15.0)
+    replace_old("xpilotLevelerMaxCutDb", -18.0, -24.0)
+    replace_old("xpilotLevelerSpeed", 45.0, 70.0)
+    CONFIG["duckAttackMs"] = float(existing.get("duckAttackMs", 4.0))
+    CONFIG["duckReleaseMs"] = float(existing.get("duckReleaseMs", 180.0))
+    CONFIG["bufferMaxMs"] = float(existing.get("bufferMaxMs", 120.0))
+    CONFIG["bufferTargetMs"] = float(existing.get("bufferTargetMs", 45.0))
+    CONFIG["configVersion"] = ENGINE_VERSION
+
+
 def load_config() -> None:
     global CONFIG
     with CONFIG_LOCK:
         CONFIG = default_config()
+        existing: Dict[str, Any] = {}
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
+                    existing = data
                     CONFIG.update(data)
             except Exception as e:
                 log(f"load config failed: {e!r}")
+        migrate_config_if_needed(existing)
+        if existing and str(existing.get("configVersion", "")) != ENGINE_VERSION:
+            save_config()
 
 
 def save_config() -> None:
@@ -189,39 +250,111 @@ def list_devices() -> Dict[str, Any]:
 
 
 class RingBuffer:
-    def __init__(self, max_samples: int = 48000 * 8) -> None:
+    def __init__(self, sample_rate: int = 48000, channels: int = 2, max_ms: float = 120.0, target_ms: float = 45.0) -> None:
         self.lock = threading.Lock()
-        self.data: deque[float] = deque(maxlen=max_samples)
+        self.channels = channels
+        self.sample_rate = sample_rate
+        self.max_ms = max_ms
+        self.target_ms = target_ms
+        self.max_samples = self._ms_to_samples(max_ms)
+        self.target_samples = self._ms_to_samples(target_ms)
+        self.chunks: deque[Any] = deque()
+        self.samples = 0
         self.underruns = 0
         self.overruns = 0
+        self.dropped_samples = 0
+        self.high_water_samples = 0
+
+    def _ms_to_samples(self, ms: float) -> int:
+        return max(self.channels * 2, int((self.sample_rate * self.channels * max(1.0, ms)) / 1000.0))
+
+    def configure(self, sample_rate: int, channels: int = 2, max_ms: float = 120.0, target_ms: float = 45.0) -> None:
+        with self.lock:
+            self.sample_rate = max(8000, int(sample_rate))
+            self.channels = max(1, int(channels))
+            self.max_ms = max(30.0, float(max_ms))
+            self.target_ms = max(10.0, min(float(target_ms), self.max_ms))
+            self.max_samples = self._ms_to_samples(self.max_ms)
+            self.target_samples = self._ms_to_samples(self.target_ms)
+            if self.samples > self.max_samples:
+                self._drop_unlocked(self.samples - self.target_samples)
 
     def clear(self) -> None:
         with self.lock:
-            self.data.clear()
+            self.chunks.clear()
+            self.samples = 0
             self.underruns = 0
             self.overruns = 0
+            self.dropped_samples = 0
+            self.high_water_samples = 0
 
-    def append(self, values: List[float]) -> None:
+    def _drop_unlocked(self, count: int) -> None:
+        remaining = max(0, count)
+        dropped = 0
+        while remaining > 0 and self.chunks:
+            chunk = self.chunks[0]
+            n = len(chunk)
+            if n <= remaining:
+                self.chunks.popleft()
+                self.samples -= n
+                dropped += n
+                remaining -= n
+            else:
+                del chunk[:remaining]
+                self.samples -= remaining
+                dropped += remaining
+                remaining = 0
+        self.dropped_samples += dropped
+
+    def append(self, values: Any) -> None:
+        if not values:
+            return
         with self.lock:
-            before_free = self.data.maxlen - len(self.data) if self.data.maxlen else len(values)
-            if before_free < len(values):
+            self.chunks.append(values)
+            self.samples += len(values)
+            if self.samples > self.high_water_samples:
+                self.high_water_samples = self.samples
+            if self.samples > self.max_samples:
                 self.overruns += 1
-            self.data.extend(values)
+                self._drop_unlocked(self.samples - self.target_samples)
 
-    def read(self, count: int) -> List[float]:
-        out: List[float] = []
+    def read(self, count: int) -> Any:
+        out = array.array("f")
+        remaining = count
         with self.lock:
-            n = min(count, len(self.data))
-            for _ in range(n):
-                out.append(self.data.popleft())
-            if n < count:
+            while remaining > 0 and self.chunks:
+                chunk = self.chunks[0]
+                n = len(chunk)
+                if n <= remaining:
+                    out.extend(chunk)
+                    self.chunks.popleft()
+                    self.samples -= n
+                    remaining -= n
+                else:
+                    out.extend(chunk[:remaining])
+                    del chunk[:remaining]
+                    self.samples -= remaining
+                    remaining = 0
+            if remaining > 0:
                 self.underruns += 1
-                out.extend([0.0] * (count - n))
+        if remaining > 0:
+            out.extend(array.array("f", [0.0]) * remaining)
         return out
 
     def diagnostics(self) -> Dict[str, Any]:
         with self.lock:
-            return {"queuedSamples": len(self.data), "underruns": self.underruns, "overruns": self.overruns}
+            denom = max(1, self.sample_rate * self.channels)
+            return {
+                "queuedSamples": self.samples,
+                "queuedMs": round((self.samples / denom) * 1000.0, 1),
+                "maxMs": round(self.max_ms, 1),
+                "targetMs": round(self.target_ms, 1),
+                "underruns": self.underruns,
+                "overruns": self.overruns,
+                "droppedSamples": self.dropped_samples,
+                "droppedMs": round((self.dropped_samples / denom) * 1000.0, 1),
+                "highWaterMs": round((self.high_water_samples / denom) * 1000.0, 1),
+            }
 
 
 class AudioEngine:
@@ -231,7 +364,10 @@ class AudioEngine:
         self.streams: List[Any] = []
         self.buffers: Dict[str, RingBuffer] = {"discord": RingBuffer(), "xpilot": RingBuffer()}
         self.meters = {"discord": -120.0, "xpilot": -120.0, "output": -120.0}
+        self.rms_meters = {"discord": -120.0, "xpilot": -120.0}
+        self.activity_gains = {"discord": 0.0, "xpilot": 0.0}
         self.leveler_gains = {"discord": 1.0, "xpilot": 1.0}
+        self.duck_gains = {"discord": 1.0, "xpilot": 1.0}
         self.last_error = ""
         self.sample_rate = 48000
         self.block_size = 1024
@@ -253,98 +389,129 @@ class AudioEngine:
             self.running = False
             self.buffers["discord"].clear()
             self.buffers["xpilot"].clear()
+            self.activity_gains = {"discord": 0.0, "xpilot": 0.0}
+            self.duck_gains = {"discord": 1.0, "xpilot": 1.0}
             log("audio stopped")
 
     def _input_cb(self, source: str):
         def cb(indata, frames, time_info, status):
             try:
                 samples = array.array("f")
-                samples.frombytes(bytes(indata))
-                vals = list(samples)
-                self.meters[source] = meter_db(vals)
-                self.buffers[source].append(vals)
+                try:
+                    samples.frombytes(indata)
+                except TypeError:
+                    samples.frombytes(bytes(indata))
+                peak_db, rms_db = audio_levels(samples)
+                self.meters[source] = peak_db
+                self.rms_meters[source] = rms_db
+                peak_gain = db_to_gain(peak_db)
+                current = self.activity_gains.get(source, 0.0)
+                self.activity_gains[source] = peak_gain if peak_gain > current else current * 0.82
+                self.buffers[source].append(samples)
             except Exception:
                 self.callback_errors += 1
         return cb
 
-    def _get_stereo(self, source: str, frames: int) -> List[float]:
+    def _get_stereo(self, source: str, frames: int) -> Any:
         return self.buffers[source].read(frames * 2)
 
-    def _pan(self, stereo: List[float], pan: float) -> List[float]:
+    def _pan_gains(self, pan: float) -> Tuple[float, float]:
         pan = max(-1.0, min(1.0, float(pan)))
         angle = (pan + 1.0) * math.pi / 4.0
-        lg, rg = math.cos(angle), math.sin(angle)
-        out: List[float] = []
-        for i in range(0, len(stereo), 2):
-            left = stereo[i]
-            right = stereo[i + 1] if i + 1 < len(stereo) else left
-            mono = 0.5 * (left + right)
-            out.append(mono * lg)
-            out.append(mono * rg)
-        return out
+        return math.cos(angle), math.sin(angle)
 
-    def _leveler_gain(self, source: str, cfg: Dict[str, Any]) -> float:
+    def _leveler_gain(self, source: str, cfg: Dict[str, Any], frames: int) -> float:
         enabled_key = f"{source}LevelerEnabled"
         if not cfg.get(enabled_key, True):
-            self.leveler_gains[source] = self.leveler_gains.get(source, 1.0) + 0.02 * (1.0 - self.leveler_gains.get(source, 1.0))
+            current = self.leveler_gains.get(source, 1.0)
+            self.leveler_gains[source] = current + 0.04 * (1.0 - current)
             return self.leveler_gains[source]
-        source_db = self.meters.get(source, -120.0)
+        source_db = self.rms_meters.get(source, -120.0)
         current = self.leveler_gains.get(source, 1.0)
-        if source_db <= -60.0:
+        if source_db <= -56.0:
             desired = 1.0
         else:
-            target = float(cfg.get(f"{source}LevelerTargetDb", -21.0))
-            max_boost = max(0.0, float(cfg.get(f"{source}LevelerMaxBoostDb", 12.0)))
-            max_cut = min(0.0, float(cfg.get(f"{source}LevelerMaxCutDb", -18.0)))
+            target = float(cfg.get(f"{source}LevelerTargetDb", -20.0))
+            max_boost = max(0.0, float(cfg.get(f"{source}LevelerMaxBoostDb", 15.0)))
+            max_cut = min(0.0, float(cfg.get(f"{source}LevelerMaxCutDb", -24.0)))
             desired_db = max(max_cut, min(max_boost, target - source_db))
             desired = db_to_gain(desired_db)
-        speed = max(1.0, min(100.0, float(cfg.get(f"{source}LevelerSpeed", 45.0))))
-        attack = 0.04 + (speed / 100.0) * 0.28
-        release = 0.008 + (speed / 100.0) * 0.06
-        alpha = attack if desired < current else release
+        speed = max(1.0, min(100.0, float(cfg.get(f"{source}LevelerSpeed", 65.0))))
+        block_ms = (frames / max(1, self.sample_rate)) * 1000.0
+        cut_tau = 35.0 + (100.0 - speed) * 2.0
+        boost_tau = 130.0 + (100.0 - speed) * 6.0
+        alpha = smoothing_alpha(block_ms, cut_tau if desired < current else boost_tau)
         current = current + alpha * (desired - current)
         self.leveler_gains[source] = current
+        return current
+
+    def _ducking_gain(self, target: str, trigger: str, cfg: Dict[str, Any], frames: int, force_release: bool = False) -> float:
+        current = self.duck_gains.get(target, 1.0)
+        if force_release or not cfg.get("duckingEnabled", True):
+            desired = 1.0
+        else:
+            threshold = float(cfg.get("thresholdDb", -46.0))
+            trigger_db = gain_to_db(self.activity_gains.get(trigger, 0.0))
+            desired = db_to_gain(float(cfg.get("duckDepthDb", -24.0))) if trigger_db > threshold else 1.0
+        block_ms = (frames / max(1, self.sample_rate)) * 1000.0
+        attack_ms = float(cfg.get("duckAttackMs", 4.0))
+        release_ms = float(cfg.get("duckReleaseMs", 180.0))
+        alpha = smoothing_alpha(block_ms, attack_ms if desired < current else release_ms)
+        current = current + alpha * (desired - current)
+        self.duck_gains[target] = current
         return current
 
     def _output_cb(self, outdata, frames, time_info, status):
         try:
             with CONFIG_LOCK:
                 cfg = dict(CONFIG)
-            d = self._pan(self._get_stereo("discord", frames), float(cfg.get("discordPan", -1.0)))
-            x = self._pan(self._get_stereo("xpilot", frames), float(cfg.get("xpilotPan", 1.0)))
+            d = self._get_stereo("discord", frames)
+            x = self._get_stereo("xpilot", frames)
+            d_lg, d_rg = self._pan_gains(float(cfg.get("discordPan", -1.0)))
+            x_lg, x_rg = self._pan_gains(float(cfg.get("xpilotPan", 1.0)))
             dg = db_to_gain(float(cfg.get("discordGainDb", 0.0)))
             xg = db_to_gain(float(cfg.get("xpilotGainDb", 0.0)))
             mg = db_to_gain(float(cfg.get("masterGainDb", 0.0)))
             ceiling = db_to_gain(float(cfg.get("limiterCeilingDb", -1.0)))
 
             if cfg.get("discordLevelerEnabled", True):
-                dg *= self._leveler_gain("discord", cfg)
+                dg *= self._leveler_gain("discord", cfg, frames)
             else:
-                self._leveler_gain("discord", cfg)
+                self._leveler_gain("discord", cfg, frames)
             if cfg.get("xpilotLevelerEnabled", True):
-                xg *= self._leveler_gain("xpilot", cfg)
+                xg *= self._leveler_gain("xpilot", cfg, frames)
             else:
-                self._leveler_gain("xpilot", cfg)
+                self._leveler_gain("xpilot", cfg, frames)
 
-            if cfg.get("duckingEnabled", True):
-                th = float(cfg.get("thresholdDb", -32.0))
-                duck = db_to_gain(float(cfg.get("duckDepthDb", -12.0)))
-                if cfg.get("duckingMode", "xpilot_ducks_discord") == "xpilot_ducks_discord" and self.meters.get("xpilot", -120) > th:
-                    dg *= duck
-                if cfg.get("duckingMode") == "discord_ducks_xpilot" and self.meters.get("discord", -120) > th:
-                    xg *= duck
+            mode = cfg.get("duckingMode", "xpilot_ducks_discord")
+            if mode == "xpilot_ducks_discord":
+                dg *= self._ducking_gain("discord", "xpilot", cfg, frames)
+                self._ducking_gain("xpilot", "discord", cfg, frames, force_release=True)
+            elif mode == "discord_ducks_xpilot":
+                xg *= self._ducking_gain("xpilot", "discord", cfg, frames)
+                self._ducking_gain("discord", "xpilot", cfg, frames, force_release=True)
+            else:
+                self._ducking_gain("discord", "xpilot", cfg, frames, force_release=True)
+                self._ducking_gain("xpilot", "discord", cfg, frames, force_release=True)
 
-            mix: List[float] = []
+            mix = array.array("f", [0.0]) * (frames * 2)
             peak = 0.0
-            for i in range(frames * 2):
-                v = (d[i] * dg + x[i] * xg) * mg
-                if abs(v) > ceiling and abs(v) > 1e-9:
-                    v = ceiling if v > 0 else -ceiling
-                v = max(-1.0, min(1.0, v))
-                peak = max(peak, abs(v))
-                mix.append(v)
+            for i in range(0, frames * 2, 2):
+                d_mono = 0.5 * (d[i] + d[i + 1])
+                x_mono = 0.5 * (x[i] + x[i + 1])
+                left = ((d_mono * d_lg * dg) + (x_mono * x_lg * xg)) * mg
+                right = ((d_mono * d_rg * dg) + (x_mono * x_rg * xg)) * mg
+                if abs(left) > ceiling and abs(left) > 1e-9:
+                    left = ceiling if left > 0 else -ceiling
+                if abs(right) > ceiling and abs(right) > 1e-9:
+                    right = ceiling if right > 0 else -ceiling
+                left = max(-1.0, min(1.0, left))
+                right = max(-1.0, min(1.0, right))
+                peak = max(peak, abs(left), abs(right))
+                mix[i] = left
+                mix[i + 1] = right
             self.meters["output"] = gain_to_db(peak)
-            outdata[:] = array.array("f", mix).tobytes()
+            outdata[:] = mix.tobytes()
         except Exception:
             self.callback_errors += 1
             outdata[:] = array.array("f", [0.0] * (frames * 2)).tobytes()
@@ -369,6 +536,15 @@ class AudioEngine:
             else:
                 self.block_size = max(256, self.block_size)
                 self.latency = cfg.get("latency", "low") or "low"
+            buffer_max_ms = float(cfg.get("bufferMaxMs", 120.0))
+            buffer_target_ms = float(cfg.get("bufferTargetMs", 45.0))
+            for buffer in self.buffers.values():
+                buffer.configure(self.sample_rate, channels=2, max_ms=buffer_max_ms, target_ms=buffer_target_ms)
+                buffer.clear()
+            self.rms_meters = {"discord": -120.0, "xpilot": -120.0}
+            self.activity_gains = {"discord": 0.0, "xpilot": 0.0}
+            self.leveler_gains = {"discord": 1.0, "xpilot": 1.0}
+            self.duck_gains = {"discord": 1.0, "xpilot": 1.0}
             try:
                 if cfg.get("discordInput") is not None:
                     self.streams.append(sd.RawInputStream(device=int(cfg["discordInput"]), channels=2, samplerate=self.sample_rate, blocksize=self.block_size, latency=self.latency, dtype="float32", callback=self._input_cb("discord")))
@@ -388,10 +564,30 @@ class AudioEngine:
                 return {"ok": False, "error": self.last_error}
 
     def state(self) -> Dict[str, Any]:
-        return {"ok": True, "version": ENGINE_VERSION, "running": self.running, "meters": dict(self.meters), "levelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)), "discordLevelerGainDb": gain_to_db(self.leveler_gains.get("discord", 1.0)), "xpilotLevelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)), "diagnostics": self.diagnostics()}
+        return {
+            "ok": True,
+            "version": ENGINE_VERSION,
+            "running": self.running,
+            "meters": dict(self.meters),
+            "rmsMeters": dict(self.rms_meters),
+            "levelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)),
+            "discordLevelerGainDb": gain_to_db(self.leveler_gains.get("discord", 1.0)),
+            "xpilotLevelerGainDb": gain_to_db(self.leveler_gains.get("xpilot", 1.0)),
+            "discordDuckGainDb": gain_to_db(self.duck_gains.get("discord", 1.0)),
+            "xpilotDuckGainDb": gain_to_db(self.duck_gains.get("xpilot", 1.0)),
+            "diagnostics": self.diagnostics(),
+        }
 
     def diagnostics(self) -> Dict[str, Any]:
-        return {"sampleRate": self.sample_rate, "blockSize": self.block_size, "latency": str(self.latency), "callbackErrors": self.callback_errors, "discord": self.buffers["discord"].diagnostics(), "xpilot": self.buffers["xpilot"].diagnostics(), "lastError": self.last_error}
+        return {
+            "sampleRate": self.sample_rate,
+            "blockSize": self.block_size,
+            "latency": str(self.latency),
+            "callbackErrors": self.callback_errors,
+            "discord": self.buffers["discord"].diagnostics(),
+            "xpilot": self.buffers["xpilot"].diagnostics(),
+            "lastError": self.last_error,
+        }
 
 ENGINE = AudioEngine()
 HTTPD: ThreadingHTTPServer | None = None

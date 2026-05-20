@@ -39,7 +39,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleExecutable</key><string>AudioDaBitch</string>
   <key>CFBundleIconFile</key><string>AudioDaBitch</string>
-  <key>NSMicrophoneUsageDescription</key><string>AudioDaBitch benötigt Zugriff auf Audio-Eingänge, um BlackHole/virtuelle Audiogeräte zu verarbeiten.</string>
+  <key>NSMicrophoneUsageDescription</key><string>AudioDaBitch needs access to audio inputs so it can process BlackHole and virtual audio devices.</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST

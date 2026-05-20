@@ -1,9 +1,11 @@
-# AudioDaBitch 0.5.10
+# AudioDaBitch 0.5.11
 
-English UI and dual channel leveling.
+Ducking, latency and performance tuning.
 
-- All visible app labels, buttons, status messages and in-app documents are now English.
-- Discord channel 1 now uses the same automatic leveling logic as xPilot channel 2.
-- The Leveling tab now includes tuning controls for Discord and xPilot: enable, target loudness, maximum boost, maximum cut and response speed.
-- Updates, Changelog and Help were rewritten with clearer headings and symbols.
-- The stable 0.5.9 installer fix and 0.5.6 audio base remain in place.
+- xPilot-priority ducking now reacts faster and lowers Discord more clearly.
+- The Leveling tab now includes Ducking controls: threshold, Discord reduction, attack and release.
+- Input queues are trimmed to prevent xPilot audio from drifting late.
+- Python CPU load is reduced with chunked buffers and a lighter mixer path.
+- Discord and xPilot leveling use RMS-based speech detection for steadier volume correction.
+- Updates, Changelog and Help are more colorful with styled headings and symbols.
+- The stable 0.5.9 installer fix remains in place.
