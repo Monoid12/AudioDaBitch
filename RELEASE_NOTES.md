@@ -1,11 +1,10 @@
-# AudioDaBitch 0.5.11
+# AudioDaBitch 0.5.12
 
-Ducking, latency and performance tuning.
+Automatic update checks and reliable device restore.
 
-- xPilot-priority ducking now reacts faster and lowers Discord more clearly.
-- The Leveling tab now includes Ducking controls: threshold, Discord reduction, attack and release.
-- Input queues are trimmed to prevent xPilot audio from drifting late.
-- Python CPU load is reduced with chunked buffers and a lighter mixer path.
-- Discord and xPilot leveling use RMS-based speech detection for steadier volume correction.
-- Updates, Changelog and Help are more colorful with styled headings and symbols.
-- The stable 0.5.9 installer fix remains in place.
+- GitHub update checks now run automatically on launch and retry if GitHub is slow or unreachable at first.
+- The device list refreshes automatically while the engine is still starting.
+- Saved Discord, xPilot and Output devices are restored into the UI on startup.
+- Device names are stored together with device IDs, so AudioDaBitch can recover if macOS changes IDs.
+- Saved volume, pan, leveling and ducking controls are restored before any manual Refresh Devices step.
+- The 0.5.11 ducking, latency and leveling improvements remain in place.

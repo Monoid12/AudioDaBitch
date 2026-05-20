@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.11"
+let ADBVersion = "0.5.12"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -381,7 +381,11 @@ final class AppController: NSViewController {
     var updateTabItem: NSTabViewItem?
     var latestRelease: GitHubRelease?
     var latestAssetURL: URL?
-    var timer: Timer?
+    var stateTimer: Timer?
+    var updateTimer: Timer?
+    var savedConfig: [String: Any] = [:]
+    var inputDevices: [Device] = []
+    var outputDevices: [Device] = []
 
     override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 700)) }
 
@@ -389,9 +393,12 @@ final class AppController: NSViewController {
         super.viewDidLoad()
         buildUI()
         EngineManager.shared.start()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.loadConfigIntoUI(); self.refreshAll() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.checkForUpdates(silent: true) }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in self.pollState() }
+        updateStatus.stringValue = "Checking for updates automatically..."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { self.loadConfigIntoUI() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.refreshAll() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.checkForUpdates(silent: false, allowRetry: true) }
+        stateTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in self.pollState() }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { _ in self.checkForUpdates(silent: true, allowRetry: false) }
     }
 
     func buildUI() {
@@ -548,7 +555,7 @@ final class AppController: NSViewController {
         title.font = .systemFont(ofSize: 20, weight: .heavy)
         title.textColor = .systemBlue
         stack.addArrangedSubview(title)
-        let intro = NSTextField(wrappingLabelWithString: "✓ Checks the official GitHub release feed.\n→ A newer release turns this tab blue and enables Install Update.\n! If this version is current, no update needs to be installed.")
+        let intro = NSTextField(wrappingLabelWithString: "✓ Checks the official GitHub release feed automatically on launch.\n→ A newer release turns this tab blue and enables Install Update.\n! If this version is current, no update needs to be installed.")
         intro.textColor = .labelColor
         intro.font = .systemFont(ofSize: 13, weight: .medium)
         stack.addArrangedSubview(intro)
@@ -670,7 +677,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "# BlackHole Routing\n\n## Signal Flow\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\n! Do not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\n## Audio MIDI Setup\nSet all involved devices to 48,000 Hz." }
-    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.11\n- Faster xPilot-priority ducking\n- Low-latency queue trimming\n- Lower Python callback overhead\n- Styled Updates, Changelog and Help tabs" }
+    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.12\n- Automatic update checks on launch\n- Startup device refresh retry\n- Saved devices restored by ID and name\n- Saved controls restored automatically" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
@@ -713,15 +720,49 @@ final class AppController: NSViewController {
         ]
     }
 
+    func configInt(_ key: String) -> Int? {
+        if let value = savedConfig[key] as? Int { return value }
+        if let value = savedConfig[key] as? Double { return Int(value) }
+        if let value = savedConfig[key] as? String { return Int(value) }
+        return nil
+    }
+
+    func configDouble(_ key: String) -> Double? {
+        if let value = savedConfig[key] as? Double { return value }
+        if let value = savedConfig[key] as? Int { return Double(value) }
+        if let value = savedConfig[key] as? String { return Double(value) }
+        return nil
+    }
+
+    func configString(_ key: String) -> String? {
+        guard let value = savedConfig[key] as? String, !value.isEmpty else { return nil }
+        return value
+    }
+
+    func normalizedDeviceName(_ name: String) -> String {
+        name.lowercased().split(separator: " ").joined(separator: " ")
+    }
+
     func loadConfigIntoUI() {
         EngineManager.shared.get("/config") { data in
             DispatchQueue.main.async {
                 guard let data,
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let cfg = obj["config"] as? [String: Any] else { return }
+                self.savedConfig = cfg
+                self.applyAudioConfig()
                 self.applyLevelerConfig(cfg)
+                self.applySavedDeviceSelections()
             }
         }
+    }
+
+    func applyAudioConfig() {
+        if let value = configDouble("discordGainDb") { discord.gain.doubleValue = value }
+        if let value = configDouble("xpilotGainDb") { xpilot.gain.doubleValue = value }
+        if let value = configDouble("masterGainDb") { output.gain.doubleValue = value }
+        if let value = configDouble("discordPan") { discord.pan.doubleValue = value }
+        if let value = configDouble("xpilotPan") { xpilot.pan.doubleValue = value }
     }
 
     func applyLevelerConfig(_ cfg: [String: Any]) {
@@ -750,9 +791,9 @@ final class AppController: NSViewController {
         updateButton.isEnabled = enabled
     }
 
-    func checkForUpdates(silent: Bool) {
+    func checkForUpdates(silent: Bool, allowRetry: Bool = false, attempt: Int = 0) {
         if !silent {
-            updateStatus.stringValue = "Checking GitHub releases..."
+            updateStatus.stringValue = attempt == 0 ? "Checking GitHub releases automatically..." : "Retrying update check..."
             updateStatus.textColor = .secondaryLabelColor
         }
         var request = URLRequest(url: ADBLatestReleaseURL)
@@ -760,15 +801,31 @@ final class AppController: NSViewController {
         URLSession.shared.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async {
                 if let error {
-                    if !silent {
-                        self.updateStatus.stringValue = "Update check failed: \(error.localizedDescription)"
+                    if allowRetry && attempt < 4 {
+                        if !silent {
+                            self.updateStatus.stringValue = "Update check failed. Retrying automatically..."
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(2 + attempt * 2)) {
+                            self.checkForUpdates(silent: silent, allowRetry: allowRetry, attempt: attempt + 1)
+                        }
+                    } else {
+                        if !silent {
+                            self.updateStatus.stringValue = "Update check failed: \(error.localizedDescription)"
+                        }
+                        self.setUpdateBadge(false)
                     }
-                    self.setUpdateBadge(false)
                     return
                 }
                 guard let data, let release = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
-                    if !silent { self.updateStatus.stringValue = "Could not read the GitHub release." }
-                    self.setUpdateBadge(false)
+                    if allowRetry && attempt < 4 {
+                        if !silent { self.updateStatus.stringValue = "Could not read the release yet. Retrying automatically..." }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(2 + attempt * 2)) {
+                            self.checkForUpdates(silent: silent, allowRetry: allowRetry, attempt: attempt + 1)
+                        }
+                    } else {
+                        if !silent { self.updateStatus.stringValue = "Could not read the GitHub release." }
+                        self.setUpdateBadge(false)
+                    }
                     return
                 }
                 self.latestRelease = release
@@ -856,7 +913,7 @@ fi
         }
     }
 
-    func refreshAll() { pollHealth(); fetchDevices(); pollState() }
+    func refreshAll() { pollHealth(); fetchDevices(retry: true); pollState() }
 
     func pollHealth() {
         EngineManager.shared.get("/health") { data in
@@ -867,20 +924,36 @@ fi
         }
     }
 
-    func fetchDevices() {
+    func fetchDevices(retry: Bool = false, attempt: Int = 0) {
         EngineManager.shared.get("/devices") { data in
             DispatchQueue.main.async {
-                guard let data, let response = try? JSONDecoder().decode(DevicesResponse.self, from: data) else { self.deviceError.stringValue = "Could not read /devices"; return }
-                self.populate(self.discord.popup, response.inputs)
-                self.populate(self.xpilot.popup, response.inputs)
-                self.populate(self.output.popup, response.outputs)
+                guard let data, let response = try? JSONDecoder().decode(DevicesResponse.self, from: data) else {
+                    if retry && attempt < 8 {
+                        self.deviceError.stringValue = "Waiting for audio devices..."
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.fetchDevices(retry: retry, attempt: attempt + 1) }
+                    } else {
+                        self.deviceError.stringValue = "Could not read /devices"
+                    }
+                    return
+                }
+                if retry && attempt < 8 && (response.inputs.isEmpty || response.outputs.isEmpty) {
+                    self.deviceError.stringValue = "Waiting for audio devices..."
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.fetchDevices(retry: retry, attempt: attempt + 1) }
+                    return
+                }
+                self.inputDevices = response.inputs
+                self.outputDevices = response.outputs
+                self.applySavedDeviceSelections()
                 if let error = response.error, !error.isEmpty { self.deviceError.stringValue = "Device error: \(error)" } else { self.deviceError.stringValue = response.inputs.isEmpty || response.outputs.isEmpty ? "No audio devices found" : "" }
             }
         }
     }
 
-    func populate(_ popup: NSPopUpButton, _ devices: [Device]) {
-        let old = popup.selectedItem?.representedObject as? Int
+    @discardableResult
+    func populate(_ popup: NSPopUpButton, _ devices: [Device], idKey: String, nameKey: String) -> Device? {
+        let currentId = popup.selectedItem?.representedObject as? Int
+        let savedId = configInt(idKey)
+        let savedName = configString(nameKey)
         popup.removeAllItems()
         popup.addItem(withTitle: "Select a device")
         popup.lastItem?.representedObject = -1
@@ -888,7 +961,50 @@ fi
             popup.addItem(withTitle: "\(device.name)  (#\(device.id))")
             popup.lastItem?.representedObject = device.id
         }
-        if let old, let item = popup.itemArray.first(where: { ($0.representedObject as? Int) == old }) { popup.select(item) }
+        if let savedId, let item = popup.itemArray.first(where: { ($0.representedObject as? Int) == savedId }) {
+            popup.select(item)
+            return devices.first(where: { $0.id == savedId })
+        }
+        if let savedName {
+            let normalized = normalizedDeviceName(savedName)
+            if let device = devices.first(where: { normalizedDeviceName($0.name) == normalized }),
+               let item = popup.itemArray.first(where: { ($0.representedObject as? Int) == device.id }) {
+                popup.select(item)
+                return device
+            }
+        }
+        if let currentId, currentId >= 0, let item = popup.itemArray.first(where: { ($0.representedObject as? Int) == currentId }) {
+            popup.select(item)
+            return devices.first(where: { $0.id == currentId })
+        }
+        popup.selectItem(at: 0)
+        return nil
+    }
+
+    func applySavedDeviceSelections() {
+        let discordDevice = populate(discord.popup, inputDevices, idKey: "discordInput", nameKey: "discordInputName")
+        let xpilotDevice = populate(xpilot.popup, inputDevices, idKey: "xpilotInput", nameKey: "xpilotInputName")
+        let outputDevice = populate(output.popup, outputDevices, idKey: "outputDevice", nameKey: "outputDeviceName")
+        var body: [String: Any] = [:]
+        if let device = discordDevice {
+            body["discordInput"] = device.id
+            body["discordInputName"] = device.name
+        }
+        if let device = xpilotDevice {
+            body["xpilotInput"] = device.id
+            body["xpilotInputName"] = device.name
+        }
+        if let device = outputDevice {
+            body["outputDevice"] = device.id
+            body["outputDeviceName"] = device.name
+        }
+        guard !body.isEmpty else { return }
+        EngineManager.shared.post("/config", body: body) { _ in }
+        savedConfig.merge(body) { _, new in new }
+    }
+
+    func deviceName(for id: Int, in devices: [Device]) -> String? {
+        devices.first(where: { $0.id == id })?.name
     }
 
     func pollState() {
@@ -914,9 +1030,18 @@ fi
         let did = discord.popup.selectedItem?.representedObject as? Int ?? -1
         let xid = xpilot.popup.selectedItem?.representedObject as? Int ?? -1
         let oid = output.popup.selectedItem?.representedObject as? Int ?? -1
-        if did >= 0 { body["discordInput"] = did }
-        if xid >= 0 { body["xpilotInput"] = xid }
-        if oid >= 0 { body["outputDevice"] = oid }
+        if did >= 0 {
+            body["discordInput"] = did
+            if let name = deviceName(for: did, in: inputDevices) { body["discordInputName"] = name }
+        }
+        if xid >= 0 {
+            body["xpilotInput"] = xid
+            if let name = deviceName(for: xid, in: inputDevices) { body["xpilotInputName"] = name }
+        }
+        if oid >= 0 {
+            body["outputDevice"] = oid
+            if let name = deviceName(for: oid, in: outputDevices) { body["outputDeviceName"] = name }
+        }
         body["discordGainDb"] = discord.gain.doubleValue
         body["xpilotGainDb"] = xpilot.gain.doubleValue
         body["masterGainDb"] = output.gain.doubleValue
@@ -930,6 +1055,7 @@ fi
         body["blockSize"] = 1024
         body["latency"] = "high"
         EngineManager.shared.post("/config", body: body) { _ in }
+        savedConfig.merge(body) { _, new in new }
     }
 }
 

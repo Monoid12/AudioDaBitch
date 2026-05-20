@@ -1,5 +1,13 @@
 # AudioDaBitch Changelog
 
+## 0.5.12 - Automatic Updates and Device Restore
+
+* Update checks run automatically on launch and retry if GitHub is not reachable immediately.
+* Device refresh retries while the engine is still starting, so the list appears without pressing Refresh Devices.
+* Saved Discord, xPilot and Output devices are restored into the UI on startup.
+* Device names are stored together with IDs, so AudioDaBitch can recover if macOS changes device IDs.
+* Saved volume, pan, leveling and ducking controls are restored automatically.
+
 ## 0.5.11 - Ducking, Latency and Performance
 
 * xPilot-priority ducking now reacts much faster, so Discord is reduced as soon as ATC audio appears.

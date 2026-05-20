@@ -1,4 +1,4 @@
-# AudioDaBitch 0.5.11 - Start here
+# AudioDaBitch 0.5.12 - Start here
 
 1. Run `./dev_check.command`.
 2. Run `./release.command` when preparing a release.

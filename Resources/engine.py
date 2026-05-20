@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.11
+# AudioDaBitch Engine 0.5.12
 from __future__ import annotations
 
 import atexit
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-ENGINE_VERSION = "0.5.11"
+ENGINE_VERSION = "0.5.12"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -137,8 +137,11 @@ def default_config() -> Dict[str, Any]:
     return {
         "configVersion": ENGINE_VERSION,
         "discordInput": None,
+        "discordInputName": "",
         "xpilotInput": None,
+        "xpilotInputName": "",
         "outputDevice": None,
+        "outputDeviceName": "",
         "discordGainDb": 0.0,
         "xpilotGainDb": 0.0,
         "masterGainDb": 0.0,
@@ -200,6 +203,30 @@ def migrate_config_if_needed(existing: Dict[str, Any]) -> None:
     CONFIG["bufferMaxMs"] = float(existing.get("bufferMaxMs", 120.0))
     CONFIG["bufferTargetMs"] = float(existing.get("bufferTargetMs", 45.0))
     CONFIG["configVersion"] = ENGINE_VERSION
+
+
+def normalized_device_name(name: Any) -> str:
+    return " ".join(str(name or "").casefold().split())
+
+
+def resolve_device_id(device_id: Any, device_name: Any, direction: str) -> Any:
+    devices = list_devices()
+    key = "inputs" if direction == "input" else "outputs"
+    candidates = devices.get(key, [])
+    try:
+        wanted_id = None if device_id is None else int(device_id)
+    except Exception:
+        wanted_id = None
+    if wanted_id is not None:
+        for item in candidates:
+            if int(item.get("id", -1)) == wanted_id:
+                return wanted_id
+    wanted_name = normalized_device_name(device_name)
+    if wanted_name:
+        for item in candidates:
+            if normalized_device_name(item.get("name", "")) == wanted_name:
+                return int(item["id"])
+    return device_id
 
 
 def load_config() -> None:
@@ -525,6 +552,12 @@ class AudioEngine:
             load_config()
             with CONFIG_LOCK:
                 cfg = dict(CONFIG)
+            cfg["discordInput"] = resolve_device_id(cfg.get("discordInput"), cfg.get("discordInputName"), "input")
+            cfg["xpilotInput"] = resolve_device_id(cfg.get("xpilotInput"), cfg.get("xpilotInputName"), "input")
+            cfg["outputDevice"] = resolve_device_id(cfg.get("outputDevice"), cfg.get("outputDeviceName"), "output")
+            with CONFIG_LOCK:
+                CONFIG.update({"discordInput": cfg.get("discordInput"), "xpilotInput": cfg.get("xpilotInput"), "outputDevice": cfg.get("outputDevice")})
+                save_config()
             out_dev = cfg.get("outputDevice")
             if out_dev is None:
                 return {"ok": False, "error": "Please choose an output device."}
