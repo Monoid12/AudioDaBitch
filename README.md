@@ -1,30 +1,6 @@
 # AudioDaBitch
 
-AudioDaBitch ist ein macOS-Audio-Router/Limiter fuer Discord und xPilot mit Ducking, Panning, xPilot Auto-Leveling und Stream-Deck-Vorbereitung.
-
-## Ziel-Routing
-
-```text
-Discord -> BlackHole 2ch  -> AudioDaBitch -> Kopfhoerer/Audiointerface
-xPilot  -> BlackHole 16ch -> AudioDaBitch -> Kopfhoerer/Audiointerface
-```
-
-Kein Multi-Output-Geraet mit Kopfhoerer verwenden, sonst laeuft Audio am Limiter vorbei.
-
-## Entwicklung / Release
-
-```bash
-./dev_check.command
-./release.command
-```
-
-## Logs
-
-```text
-~/Library/Logs/AudioDaBitch/
-```
-
-Die App kann eine Log-ZIP erzeugen.
+For all Mac users, I have developed an analog tool: 2x INPUT, 1x OUTPUT. It features Discord ducking (when a VATSIM input is detected), boosts quiet VATSIM stations, and lowers loud ones. Panning is configured with Discord on the left and VATSIM on the right. Settings can be adjusted using either a mouse or a Stream Deck. Since macOS does not support the direct routing of audio signals from applications, BlackHole is required. 
 
 ## Credits
 
