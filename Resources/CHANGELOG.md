@@ -1,5 +1,11 @@
 # AudioDaBitch Changelog
 
+## 0.5.15 - VU Needle Containment
+
+* VU needles now use a shorter, inset path so they never extend beyond the beige meter face.
+* VU ticks and labels use a safer internal drawing area.
+* Audio engine behavior remains unchanged apart from the version bump.
+
 ## 0.5.14 - VU Face Geometry Fix
 
 * VU scale labels now stay inside the beige meter face.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.15
+
+- Shortened and inset the analog VU needle path so it never extends beyond the beige meter face.
+- Added a safer internal drawing area for VU ticks, labels and needle movement.
+- Kept the audio engine behavior unchanged apart from the version bump.
+
 ## 0.5.14
 
 - Fixed analog VU geometry so scale labels and needles stay inside the beige meter face.

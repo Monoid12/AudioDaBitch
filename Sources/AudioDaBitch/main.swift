@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.14"
+let ADBVersion = "0.5.15"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -180,23 +180,24 @@ final class MeterView: NSView {
         NSGraphicsContext.saveGraphicsState()
         facePath.addClip()
 
-        let center = NSPoint(x: face.midX, y: face.minY + 13)
-        let radius = min(face.width * 0.40, face.height * 0.78)
+        let safeFace = face.insetBy(dx: 16, dy: 12)
+        let center = NSPoint(x: safeFace.midX, y: safeFace.minY + 10)
+        let radius = min(safeFace.width * 0.37, safeFace.height * 0.70)
         let minAngle: CGFloat = 232
         let maxAngle: CGFloat = 128
         let labels: [(Double, String)] = [(-60, "-60"), (-40, "-40"), (-20, "-20"), (-10, "-10"), (-6, "-6"), (0, "0")]
         for item in labels {
             let norm = CGFloat(max(0, min(1, (item.0 + 60) / 60)))
             let angle = minAngle + (maxAngle - minAngle) * norm
-            let p1 = point(center: center, radius: radius * 0.82, degrees: angle)
-            let p2 = point(center: center, radius: radius * 0.96, degrees: angle)
+            let p1 = point(center: center, radius: radius * 0.80, degrees: angle)
+            let p2 = point(center: center, radius: radius * 0.92, degrees: angle)
             let tick = NSBezierPath()
             tick.move(to: p1)
             tick.line(to: p2)
             (item.0 >= -6 ? NSColor.systemRed : NSColor(calibratedWhite: 0.14, alpha: 1)).setStroke()
             tick.lineWidth = item.0 == -60 || item.0 == 0 ? 1.5 : 1
             tick.stroke()
-            let lp = point(center: center, radius: radius * 0.66, degrees: angle)
+            let lp = point(center: center, radius: radius * 0.63, degrees: angle)
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: item.0 >= -6 ? NSColor.systemRed : NSColor(calibratedWhite: 0.12, alpha: 1),
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
@@ -209,12 +210,12 @@ final class MeterView: NSView {
         let subtitleAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1), .font: NSFont.systemFont(ofSize: 10, weight: .bold)]
         let titleText = title.uppercased()
         let titleSize = titleText.size(withAttributes: titleAttrs)
-        titleText.draw(at: NSPoint(x: face.midX - titleSize.width / 2, y: face.minY + 38), withAttributes: titleAttrs)
-        "VU".draw(at: NSPoint(x: face.midX - 8, y: face.minY + 25), withAttributes: subtitleAttrs)
+        titleText.draw(at: NSPoint(x: face.midX - titleSize.width / 2, y: face.minY + 39), withAttributes: titleAttrs)
+        "VU".draw(at: NSPoint(x: face.midX - 8, y: face.minY + 27), withAttributes: subtitleAttrs)
 
         let norm = CGFloat(max(0, min(1, (valueDb + 60) / 60)))
         let angle = minAngle + (maxAngle - minAngle) * norm
-        let needleEnd = point(center: center, radius: radius * 0.88, degrees: angle)
+        let needleEnd = point(center: center, radius: radius * 0.80, degrees: angle)
         let shadow = NSBezierPath()
         shadow.move(to: NSPoint(x: center.x + 1, y: center.y - 1))
         shadow.line(to: NSPoint(x: needleEnd.x + 1, y: needleEnd.y - 1))
@@ -921,7 +922,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "# BlackHole Routing\n\n## Signal Flow\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\n! Do not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\n## Audio MIDI Setup\nSet all involved devices to 48,000 Hz." }
-    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.14\n- VU scale labels stay inside the beige meter face\n- VU needles pivot and move inside the meter face\n- Live dB readouts moved into the meter face\n- Audio engine behavior unchanged" }
+    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.15\n- VU needles use a shorter inset path\n- VU ticks and labels use a safer internal drawing area\n- Live dB readouts stay inside the meter face\n- Audio engine behavior unchanged" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }

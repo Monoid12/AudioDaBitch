@@ -1,9 +1,9 @@
-# AudioDaBitch 0.5.14
+# AudioDaBitch 0.5.15
 
-Analog VU meter geometry fix.
+Analog VU needle containment.
 
-- VU scale labels now stay inside the beige meter face.
-- VU needles now pivot and move inside the beige meter face.
-- Live dB readouts are shown inside the meter face.
+- VU needles now use a shorter, inset path so they never extend beyond the beige meter face.
+- VU ticks and labels use a safer internal drawing area.
+- Live dB readouts stay inside the meter face.
 - The audio engine behavior remains unchanged apart from the version bump.
-- The 0.5.13 analog VU meters and rotary controls remain in place.
+- The analog VU meters and rotary controls remain in place.
