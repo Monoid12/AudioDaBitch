@@ -1,5 +1,13 @@
 # AudioDaBitch Changelog
 
+## 0.5.17 - Compact UI and Clear Update Badge
+
+* VU needle pivots now sit between the VU label and the live dB readout.
+* The crowded -10 label was removed while its scale tick remains, so -6 and 0 stay readable.
+* The main window is narrower and lower with less empty space around the three VU blocks.
+* The Leveling page scrolls below Response speed, keeping the main leveling controls usable in the shorter window.
+* Automatic update checks now retry after launch and refresh the visible Updates tab badge without opening the Updates tab.
+
 ## 0.5.16 - VU Readability and Auto Start
 
 * VU tick marks and scale labels now sit higher inside the beige meter face.

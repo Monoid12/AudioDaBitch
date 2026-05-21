@@ -1,10 +1,10 @@
-# AudioDaBitch 0.5.16
+# AudioDaBitch 0.5.17
 
-VU readability and saved-device auto start.
+Compact UI, clearer VU face and automatic update badge.
 
-- VU ticks and scale labels now sit higher in the beige meter face.
-- VU needles are longer but remain inside the meter window.
-- Discord, xPilot and Output labels stay centered and readable while only the needle moves across them.
-- Saved devices are restored automatically after launch/update.
-- Audio starts automatically once the saved Discord, xPilot and Output devices are available.
-- The audio engine behavior remains unchanged apart from the version bump.
+- VU needle pivots now sit between the VU label and the live dB readout.
+- The crowded -10 label was removed while its tick remains, so -6 and 0 stay readable.
+- The main window is narrower and lower with less empty space around the VU meters.
+- The Leveling page scrolls below Response speed for the secondary ducking controls.
+- Automatic update checks refresh the visible Updates tab badge without opening the Updates tab.
+- Audio engine processing remains unchanged apart from the version bump.

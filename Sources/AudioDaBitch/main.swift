@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.16"
+let ADBVersion = "0.5.17"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -180,11 +180,11 @@ final class MeterView: NSView {
         NSGraphicsContext.saveGraphicsState()
         facePath.addClip()
 
-        let center = NSPoint(x: face.midX, y: face.minY + 14)
+        let center = NSPoint(x: face.midX, y: face.minY + 19)
         let radius = min(face.width * 0.33, face.height * 0.78)
         let minAngle: CGFloat = 236
         let maxAngle: CGFloat = 124
-        let majorLabels: [Int: String] = [-60: "-60", -40: "-40", -20: "-20", -10: "-10", -6: "-6", 0: "0"]
+        let majorLabels: [Int: String] = [-60: "-60", -40: "-40", -20: "-20", -6: "-6", 0: "0"]
         let tickValues = [-60, -50, -40, -30, -20, -15, -10, -6, 0]
         for value in tickValues {
             let norm = CGFloat(max(0, min(1, (Double(value) + 60) / 60)))
@@ -237,7 +237,7 @@ final class MeterView: NSView {
         let valueText = "\(Int(valueDb.rounded())) dB"
         let valueAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1), .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)]
         let valueSize = valueText.size(withAttributes: valueAttrs)
-        valueText.draw(at: NSPoint(x: face.midX - valueSize.width / 2, y: face.minY + 1), withAttributes: valueAttrs)
+        valueText.draw(at: NSPoint(x: face.midX - valueSize.width / 2, y: face.minY + 2), withAttributes: valueAttrs)
 
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -482,7 +482,7 @@ final class LevelerPanel: NSBox {
         contentViewMargins = NSSize(width: 14, height: 14)
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 9
+        stack.spacing = 7
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView?.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -516,8 +516,8 @@ final class LevelerPanel: NSBox {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 118).isActive = true
-        knob.widthAnchor.constraint(equalToConstant: 68).isActive = true
-        knob.heightAnchor.constraint(equalToConstant: 78).isActive = true
+        knob.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        knob.heightAnchor.constraint(equalToConstant: 72).isActive = true
         value.alignment = .right
         value.textColor = .secondaryLabelColor
         value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -590,8 +590,8 @@ final class DuckingPanel: NSBox {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 130).isActive = true
-        knob.widthAnchor.constraint(equalToConstant: 68).isActive = true
-        knob.heightAnchor.constraint(equalToConstant: 78).isActive = true
+        knob.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        knob.heightAnchor.constraint(equalToConstant: 72).isActive = true
         value.alignment = .right
         value.textColor = .secondaryLabelColor
         value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -614,6 +614,7 @@ final class AppController: NSViewController {
     let tabs = NSTabView()
     let status = NSTextField(labelWithString: "Starting...")
     let diagnosticsLabel = NSTextField(labelWithString: "")
+    let updateNotice = NSTextField(labelWithString: "")
     let discord = BlockView(title: "Discord", hasPan: true)
     let xpilot = BlockView(title: "xPilot", hasPan: true)
     let output = BlockView(title: "Output", hasPan: false)
@@ -636,7 +637,7 @@ final class AppController: NSViewController {
     var outputDevices: [Device] = []
     var didAutoStartAudio = false
 
-    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1240, height: 820)) }
+    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1040, height: 680)) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -645,9 +646,11 @@ final class AppController: NSViewController {
         updateStatus.stringValue = "Checking for updates automatically..."
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { self.loadConfigIntoUI() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.refreshAll() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.checkForUpdates(silent: false, allowRetry: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.checkForUpdates(silent: false, allowRetry: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { self.checkForUpdates(silent: true, allowRetry: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45.0) { self.checkForUpdates(silent: true, allowRetry: false) }
         stateTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in self.pollState() }
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { _ in self.checkForUpdates(silent: true, allowRetry: false) }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { _ in self.checkForUpdates(silent: true, allowRetry: false) }
     }
 
     func buildUI() {
@@ -669,6 +672,10 @@ final class AppController: NSViewController {
         top.alignment = .centerY
         status.stringValue = "AudioDaBitch \(ADBVersion)"
         top.addArrangedSubview(status)
+        updateNotice.textColor = .systemBlue
+        updateNotice.font = .systemFont(ofSize: 12, weight: .bold)
+        updateNotice.isHidden = true
+        top.addArrangedSubview(updateNotice)
         top.addArrangedSubview(button("Refresh Devices", #selector(loadDevices)))
         top.addArrangedSubview(button("Start Audio", #selector(startAudio)))
         top.addArrangedSubview(button("Stop Audio", #selector(stopAudio)))
@@ -682,7 +689,7 @@ final class AppController: NSViewController {
 
         tabs.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(tabs)
-        tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 650).isActive = true
+        tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
         addTab("Audio", audioView())
         addTab("Leveling", levelerView())
         updateTabItem = addTab("Updates", updatesView())
@@ -740,7 +747,7 @@ final class AppController: NSViewController {
         row.spacing = 12
         for block in [discord, xpilot, output] {
             block.translatesAutoresizingMaskIntoConstraints = false
-            block.widthAnchor.constraint(equalToConstant: 360).isActive = true
+            block.widthAnchor.constraint(equalToConstant: 300).isActive = true
             row.addArrangedSubview(block)
         }
         stack.addArrangedSubview(row)
@@ -751,16 +758,27 @@ final class AppController: NSViewController {
     }
 
     func levelerView() -> NSView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.borderType = .noBorder
         let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = view
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
         NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+            view.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            view.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18)
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18)
         ])
         let title = NSTextField(labelWithString: "Channel Leveling")
         title.font = .boldSystemFont(ofSize: 20)
@@ -784,7 +802,7 @@ final class AppController: NSViewController {
         recommendation.textColor = .secondaryLabelColor
         recommendation.alignment = .center
         stack.addArrangedSubview(recommendation)
-        return view
+        return scroll
     }
 
     func updatesView() -> NSView {
@@ -926,7 +944,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "# BlackHole Routing\n\n## Signal Flow\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\n! Do not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\n## Audio MIDI Setup\nSet all involved devices to 48,000 Hz." }
-    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.16\n- VU scale ticks were moved higher into the beige meter face\n- VU needles are longer while staying inside the meter window\n- Saved devices auto-restore and audio starts automatically when the three saved devices are available" }
+    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.17\n- VU needle pivots sit higher between the VU label and dB readout\n- Crowded -10/-6 scale labels were cleaned up\n- Main window is narrower and lower, with Leveling controls scrollable below response speed\n- Automatic update checks refresh the tab badge without opening the Updates tab" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { didAutoStartAudio = true; EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
@@ -1035,9 +1053,13 @@ final class AppController: NSViewController {
     }
 
     func setUpdateBadge(_ enabled: Bool) {
-        updateTabItem?.label = enabled ? "🔵 Updates" : "Updates"
+        updateTabItem?.label = enabled ? "🔵 Update" : "Updates"
+        updateNotice.stringValue = enabled ? "🔵 Update available" : ""
+        updateNotice.isHidden = !enabled
         updateStatus.textColor = enabled ? .systemBlue : .secondaryLabelColor
         updateButton.isEnabled = enabled
+        tabs.needsDisplay = true
+        tabs.displayIfNeeded()
     }
 
     func checkForUpdates(silent: Bool, allowRetry: Bool = false, attempt: Int = 0) {
@@ -1060,8 +1082,8 @@ final class AppController: NSViewController {
                     } else {
                         if !silent {
                             self.updateStatus.stringValue = "Update check failed: \(error.localizedDescription)"
+                            self.setUpdateBadge(false)
                         }
-                        self.setUpdateBadge(false)
                     }
                     return
                 }
@@ -1072,8 +1094,10 @@ final class AppController: NSViewController {
                             self.checkForUpdates(silent: silent, allowRetry: allowRetry, attempt: attempt + 1)
                         }
                     } else {
-                        if !silent { self.updateStatus.stringValue = "Could not read the GitHub release." }
-                        self.setUpdateBadge(false)
+                        if !silent {
+                            self.updateStatus.stringValue = "Could not read the GitHub release."
+                            self.setUpdateBadge(false)
+                        }
                     }
                     return
                 }
@@ -1330,7 +1354,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AudioDaBitch \(ADBVersion) started")
         let vc = AppController()
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 980, height: 640)
         window.center()
         window.title = "AudioDaBitch"
         window.contentViewController = vc

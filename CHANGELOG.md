@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.17
+
+- Raised the analog VU needle pivot so the mounting dot sits between the `VU` label and the live dB readout.
+- Removed the crowded `-10` label while keeping its tick mark, so the `-6` and `0` markings stay readable.
+- Reduced the default app window width and height by tightening the Audio page layout.
+- Made the Leveling page scrollable below Response speed, so the primary leveling controls remain reachable in the shorter window.
+- Made automatic update checks run shortly after launch, retry in the background and refresh the visible Updates tab badge without opening the Updates tab.
+
 ## 0.5.16
 
 - Moved analog VU tick marks and scale labels higher inside the beige meter face.

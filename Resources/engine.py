@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AudioDaBitch Engine 0.5.16
+# AudioDaBitch Engine 0.5.17
 from __future__ import annotations
 
 import atexit
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-ENGINE_VERSION = "0.5.16"
+ENGINE_VERSION = "0.5.17"
 PORT = 49372
 APP_NAME = "AudioDaBitch"
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
