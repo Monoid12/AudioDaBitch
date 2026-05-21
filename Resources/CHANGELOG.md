@@ -1,5 +1,14 @@
 # AudioDaBitch Changelog
 
+## 0.5.16 - VU Readability and Auto Start
+
+* VU tick marks and scale labels now sit higher inside the beige meter face.
+* VU needles are longer but remain inside the meter window.
+* Discord, xPilot and Output labels stay centered and readable while only the needle moves across them.
+* Saved Discord, xPilot and Output devices are restored automatically on startup.
+* Audio starts automatically after launch/update when all three saved devices are available.
+* Audio engine processing remains unchanged apart from the version bump.
+
 ## 0.5.15 - VU Needle Containment
 
 * VU needles now use a shorter, inset path so they never extend beyond the beige meter face.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.16
+
+- Moved analog VU tick marks and scale labels higher inside the beige meter face.
+- Lengthened the VU needles while keeping their full movement inside the meter window.
+- Kept Discord, xPilot and Output labels centered and readable while only the needle moves across them.
+- Restored saved devices automatically and started audio once Discord, xPilot and Output devices are available.
+- Kept the audio engine processing path unchanged apart from the version bump.
+
 ## 0.5.15
 
 - Shortened and inset the analog VU needle path so it never extends beyond the beige meter face.

@@ -1,9 +1,10 @@
-# AudioDaBitch 0.5.15
+# AudioDaBitch 0.5.16
 
-Analog VU needle containment.
+VU readability and saved-device auto start.
 
-- VU needles now use a shorter, inset path so they never extend beyond the beige meter face.
-- VU ticks and labels use a safer internal drawing area.
-- Live dB readouts stay inside the meter face.
+- VU ticks and scale labels now sit higher in the beige meter face.
+- VU needles are longer but remain inside the meter window.
+- Discord, xPilot and Output labels stay centered and readable while only the needle moves across them.
+- Saved devices are restored automatically after launch/update.
+- Audio starts automatically once the saved Discord, xPilot and Output devices are available.
 - The audio engine behavior remains unchanged apart from the version bump.
-- The analog VU meters and rotary controls remain in place.
