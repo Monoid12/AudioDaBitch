@@ -1,10 +1,10 @@
-# AudioDaBitch 0.5.12
+# AudioDaBitch 0.5.13
 
-Automatic update checks and reliable device restore.
+Analog VU meters and rotary controls.
 
-- GitHub update checks now run automatically on launch and retry if GitHub is slow or unreachable at first.
-- The device list refreshes automatically while the engine is still starting.
-- Saved Discord, xPilot and Output devices are restored into the UI on startup.
-- Device names are stored together with device IDs, so AudioDaBitch can recover if macOS changes IDs.
-- Saved volume, pan, leveling and ducking controls are restored before any manual Refresh Devices step.
-- The 0.5.11 ducking, latency and leveling improvements remain in place.
+- Discord, xPilot and Output now use native analog VU meters.
+- Audio, leveling and ducking controls now use rotary knobs instead of plain sliders.
+- Knobs support mouse dragging and scroll-wheel adjustment while the pointer is over them.
+- The main window is wider and taller so the analog controls stay readable.
+- The audio engine behavior remains unchanged apart from the version bump.
+- The 0.5.12 automatic update and device restore fixes remain in place.

@@ -1,7 +1,7 @@
 import Cocoa
 import Foundation
 
-let ADBVersion = "0.5.12"
+let ADBVersion = "0.5.13"
 let ADBPort = 49372
 let ADBBaseURL = URL(string: "http://127.0.0.1:\(ADBPort)")!
 let ADBLatestReleaseURL = URL(string: "https://api.github.com/repos/Monoid12/AudioDaBitch/releases/latest")!
@@ -152,29 +152,247 @@ final class EngineManager {
 final class MeterView: NSView {
     var valueDb: Double = -120 { didSet { needsDisplay = true } }
     var title = ""
-    override var intrinsicContentSize: NSSize { NSSize(width: 220, height: 48) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 260, height: 128) }
+
+    func point(center: NSPoint, radius: CGFloat, degrees: CGFloat) -> NSPoint {
+        let radians = (degrees - 90) * .pi / 180
+        return NSPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill()
         dirtyRect.fill()
-        let text = "\(title)  \(Int(valueDb)) dB"
-        text.draw(at: NSPoint(x: 0, y: 27), withAttributes: [.foregroundColor: NSColor.labelColor, .font: NSFont.systemFont(ofSize: 12, weight: .semibold)])
-        let rect = NSRect(x: 0, y: 9, width: bounds.width, height: 12)
-        NSColor.controlBackgroundColor.setFill()
-        rect.fill()
-        let norm = max(0, min(1, (valueDb + 60) / 60))
-        let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * norm, height: rect.height)
-        (valueDb > -6 ? NSColor.systemRed : valueDb > -18 ? NSColor.systemOrange : NSColor.systemGreen).setFill()
-        fill.fill()
-        NSColor.separatorColor.setStroke()
-        NSBezierPath(rect: rect).stroke()
+
+        let outer = bounds.insetBy(dx: 3, dy: 4)
+        let body = NSBezierPath(roundedRect: outer, xRadius: 9, yRadius: 9)
+        NSGradient(colors: [NSColor(calibratedWhite: 0.05, alpha: 1), NSColor(calibratedWhite: 0.18, alpha: 1)])?.draw(in: body, angle: 90)
+        NSColor(calibratedWhite: 0.0, alpha: 0.75).setStroke()
+        body.lineWidth = 1.5
+        body.stroke()
+
+        let face = outer.insetBy(dx: 13, dy: 18)
+        let facePath = NSBezierPath(roundedRect: face, xRadius: 6, yRadius: 6)
+        NSGradient(colors: [NSColor(calibratedRed: 1.0, green: 0.86, blue: 0.58, alpha: 1), NSColor(calibratedRed: 0.72, green: 0.57, blue: 0.35, alpha: 1)])?.draw(in: facePath, angle: 90)
+        NSColor(calibratedWhite: 0.05, alpha: 0.9).setStroke()
+        facePath.lineWidth = 2
+        facePath.stroke()
+
+        let center = NSPoint(x: face.midX, y: face.minY + 14)
+        let radius = min(face.width * 0.45, face.height * 1.22)
+        let minAngle: CGFloat = -58
+        let maxAngle: CGFloat = 58
+        let labels: [(Double, String)] = [(-60, "-60"), (-40, "-40"), (-20, "-20"), (-10, "-10"), (-6, "-6"), (0, "0")]
+        for item in labels {
+            let norm = CGFloat(max(0, min(1, (item.0 + 60) / 60)))
+            let angle = minAngle + (maxAngle - minAngle) * norm
+            let p1 = point(center: center, radius: radius * 0.78, degrees: angle)
+            let p2 = point(center: center, radius: radius * 0.92, degrees: angle)
+            let tick = NSBezierPath()
+            tick.move(to: p1)
+            tick.line(to: p2)
+            (item.0 >= -6 ? NSColor.systemRed : NSColor(calibratedWhite: 0.14, alpha: 1)).setStroke()
+            tick.lineWidth = item.0 == -60 || item.0 == 0 ? 1.5 : 1
+            tick.stroke()
+            let lp = point(center: center, radius: radius * 0.62, degrees: angle)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: item.0 >= -6 ? NSColor.systemRed : NSColor(calibratedWhite: 0.12, alpha: 1),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+            ]
+            let size = item.1.size(withAttributes: attrs)
+            item.1.draw(at: NSPoint(x: lp.x - size.width / 2, y: lp.y - size.height / 2), withAttributes: attrs)
+        }
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1), .font: NSFont.systemFont(ofSize: 13, weight: .heavy)]
+        let subtitleAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1), .font: NSFont.systemFont(ofSize: 10, weight: .bold)]
+        let titleText = title.uppercased()
+        let titleSize = titleText.size(withAttributes: titleAttrs)
+        titleText.draw(at: NSPoint(x: face.midX - titleSize.width / 2, y: face.minY + 33), withAttributes: titleAttrs)
+        "VU".draw(at: NSPoint(x: face.midX - 8, y: face.minY + 18), withAttributes: subtitleAttrs)
+
+        let norm = CGFloat(max(0, min(1, (valueDb + 60) / 60)))
+        let angle = minAngle + (maxAngle - minAngle) * norm
+        let needleEnd = point(center: center, radius: radius * 0.86, degrees: angle)
+        let shadow = NSBezierPath()
+        shadow.move(to: NSPoint(x: center.x + 1, y: center.y - 1))
+        shadow.line(to: NSPoint(x: needleEnd.x + 1, y: needleEnd.y - 1))
+        NSColor(calibratedWhite: 0, alpha: 0.35).setStroke()
+        shadow.lineWidth = 2.2
+        shadow.stroke()
+        let needle = NSBezierPath()
+        needle.move(to: center)
+        needle.line(to: needleEnd)
+        NSColor.systemRed.setStroke()
+        needle.lineWidth = 1.7
+        needle.stroke()
+        NSColor(calibratedWhite: 0.08, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)).fill()
+
+        let valueText = "\(Int(valueDb.rounded())) dB"
+        let valueAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(calibratedWhite: 0.84, alpha: 1), .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)]
+        let valueSize = valueText.size(withAttributes: valueAttrs)
+        valueText.draw(at: NSPoint(x: outer.midX - valueSize.width / 2, y: outer.minY + 4), withAttributes: valueAttrs)
+    }
+}
+
+final class KnobControl: NSControl {
+    let minValue: Double
+    let maxValue: Double
+    var unit = ""
+    var step: Double = 0.0
+    private var value: Double
+    private var startPoint = NSPoint.zero
+    private var startValue: Double = 0
+    private var hovering = false
+
+    init(value: Double, minValue: Double, maxValue: Double, unit: String = "") {
+        self.value = value
+        self.minValue = minValue
+        self.maxValue = maxValue
+        self.unit = unit
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 86, height: 96) }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var doubleValue: Double {
+        get { value }
+        set { setValue(newValue, notify: false) }
+    }
+
+    func setValue(_ newValue: Double, notify: Bool) {
+        var next = max(minValue, min(maxValue, newValue))
+        if step > 0 {
+            next = (next / step).rounded() * step
+        }
+        guard abs(next - value) > 0.0001 else { return }
+        value = next
+        needsDisplay = true
+        if notify {
+            sendAction(action, to: target)
+        }
+    }
+
+    func valueAngle() -> CGFloat {
+        let norm = CGFloat((value - minValue) / (maxValue - minValue))
+        return -135 + 270 * max(0, min(1, norm))
+    }
+
+    func point(center: NSPoint, radius: CGFloat, degrees: CGFloat) -> NSPoint {
+        let radians = (degrees - 90) * .pi / 180
+        return NSPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
+    }
+
+    override func updateTrackingAreas() {
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        startPoint = convert(event.locationInWindow, from: nil)
+        startValue = value
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let range = max(0.0001, maxValue - minValue)
+        let delta = Double((point.y - startPoint.y) + (point.x - startPoint.x) * 0.35) * range / 170.0
+        setValue(startValue + delta, notify: true)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let range = max(0.0001, maxValue - minValue)
+        let direction = event.scrollingDeltaY == 0 ? -event.scrollingDeltaX : event.scrollingDeltaY
+        setValue(value + Double(direction) * range / 450.0, notify: true)
+    }
+
+    func valueText() -> String {
+        if minValue == -1 && maxValue == 1 {
+            if abs(value) < 0.05 { return "C" }
+            return value < 0 ? "L \(Int(abs(value) * 100))" : "R \(Int(value * 100))"
+        }
+        let rounded = Int(value.rounded())
+        if unit == "dB" && rounded > 0 { return "+\(rounded) \(unit)" }
+        return unit.isEmpty ? "\(rounded)" : "\(rounded) \(unit)"
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        let side = min(bounds.width, bounds.height - 14)
+        let rect = NSRect(x: bounds.midX - side / 2, y: bounds.maxY - side - 6, width: side, height: side).insetBy(dx: 5, dy: 5)
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let radius = rect.width / 2
+
+        for index in 0...10 {
+            let angle = CGFloat(-135 + index * 27)
+            let p1 = point(center: center, radius: radius + 2, degrees: angle)
+            let p2 = point(center: center, radius: radius + (index % 5 == 0 ? 10 : 7), degrees: angle)
+            let tick = NSBezierPath()
+            tick.move(to: p1)
+            tick.line(to: p2)
+            NSColor.secondaryLabelColor.setStroke()
+            tick.lineWidth = index % 5 == 0 ? 1.4 : 0.9
+            tick.stroke()
+        }
+
+        let shadow = NSBezierPath(ovalIn: rect.offsetBy(dx: 0, dy: -2))
+        NSColor(calibratedWhite: 0, alpha: 0.38).setFill()
+        shadow.fill()
+        let body = NSBezierPath(ovalIn: rect)
+        let top = hovering ? NSColor(calibratedWhite: 0.26, alpha: 1) : NSColor(calibratedWhite: 0.18, alpha: 1)
+        NSGradient(colors: [top, NSColor(calibratedWhite: 0.03, alpha: 1)])?.draw(in: body, angle: 90)
+        NSColor(calibratedWhite: 0.0, alpha: 0.95).setStroke()
+        body.lineWidth = 1.5
+        body.stroke()
+
+        let cap = NSBezierPath(ovalIn: rect.insetBy(dx: radius * 0.26, dy: radius * 0.26))
+        NSGradient(colors: [NSColor(calibratedWhite: 0.1, alpha: 1), NSColor(calibratedWhite: 0.24, alpha: 1)])?.draw(in: cap, angle: 90)
+        NSColor(calibratedWhite: 0, alpha: 0.7).setStroke()
+        cap.lineWidth = 1
+        cap.stroke()
+
+        let angle = valueAngle()
+        let p = point(center: center, radius: radius * 0.66, degrees: angle)
+        let pointer = NSBezierPath()
+        pointer.move(to: center)
+        pointer.line(to: p)
+        NSColor(calibratedRed: 0.9, green: 0.94, blue: 0.98, alpha: 1).setStroke()
+        pointer.lineWidth = 3.2
+        pointer.lineCapStyle = .round
+        pointer.stroke()
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.labelColor,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        ]
+        let text = valueText()
+        let size = text.size(withAttributes: attrs)
+        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: 1), withAttributes: attrs)
     }
 }
 
 final class BlockView: NSBox {
     let popup = NSPopUpButton()
     let meter = MeterView()
-    let gain = NSSlider(value: 0, minValue: -24, maxValue: 12, target: nil, action: nil)
-    let pan = NSSlider(value: 0, minValue: -1, maxValue: 1, target: nil, action: nil)
+    let gain = KnobControl(value: 0, minValue: -24, maxValue: 12, unit: "dB")
+    let pan = KnobControl(value: 0, minValue: -1, maxValue: 1)
 
     init(title: String, hasPan: Bool) {
         super.init(frame: .zero)
@@ -195,15 +413,19 @@ final class BlockView: NSBox {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: contentView!.bottomAnchor)
         ])
         meter.title = title
+        meter.heightAnchor.constraint(equalToConstant: 128).isActive = true
         stack.addArrangedSubview(meter)
         stack.addArrangedSubview(label("Device"))
         stack.addArrangedSubview(popup)
-        stack.addArrangedSubview(label("Volume"))
-        stack.addArrangedSubview(gain)
+        let controls = NSStackView()
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 18
+        controls.addArrangedSubview(knobColumn("Volume", gain))
         if hasPan {
-            stack.addArrangedSubview(label("Pan"))
-            stack.addArrangedSubview(pan)
+            controls.addArrangedSubview(knobColumn("Pan", pan))
         }
+        stack.addArrangedSubview(controls)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -214,14 +436,29 @@ final class BlockView: NSBox {
         label.textColor = .secondaryLabelColor
         return label
     }
+
+    func knobColumn(_ title: String, _ knob: KnobControl) -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 3
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        knob.widthAnchor.constraint(equalToConstant: 86).isActive = true
+        knob.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        stack.addArrangedSubview(label)
+        stack.addArrangedSubview(knob)
+        return stack
+    }
 }
 
 final class LevelerPanel: NSBox {
     let enabled = NSButton(checkboxWithTitle: "Enable leveling", target: nil, action: nil)
-    let target = NSSlider(value: -20, minValue: -36, maxValue: -12, target: nil, action: nil)
-    let maxBoost = NSSlider(value: 15, minValue: 0, maxValue: 18, target: nil, action: nil)
-    let maxCut = NSSlider(value: -24, minValue: -30, maxValue: 0, target: nil, action: nil)
-    let speed = NSSlider(value: 65, minValue: 1, maxValue: 100, target: nil, action: nil)
+    let target = KnobControl(value: -20, minValue: -36, maxValue: -12, unit: "dB")
+    let maxBoost = KnobControl(value: 15, minValue: 0, maxValue: 18, unit: "dB")
+    let maxCut = KnobControl(value: -24, minValue: -30, maxValue: 0, unit: "dB")
+    let speed = KnobControl(value: 65, minValue: 1, maxValue: 100, unit: "%")
     let targetValue = NSTextField(labelWithString: "")
     let boostValue = NSTextField(labelWithString: "")
     let cutValue = NSTextField(labelWithString: "")
@@ -262,7 +499,7 @@ final class LevelerPanel: NSBox {
 
     var controls: [NSControl] { [enabled, target, maxBoost, maxCut, speed] }
 
-    func controlRow(_ title: String, _ slider: NSSlider, _ value: NSTextField) -> NSView {
+    func controlRow(_ title: String, _ knob: KnobControl, _ value: NSTextField) -> NSView {
         let row = NSStackView()
         row.orientation = .horizontal
         row.spacing = 8
@@ -270,13 +507,14 @@ final class LevelerPanel: NSBox {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 118).isActive = true
-        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
+        knob.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        knob.heightAnchor.constraint(equalToConstant: 78).isActive = true
         value.alignment = .right
         value.textColor = .secondaryLabelColor
         value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         value.widthAnchor.constraint(equalToConstant: 64).isActive = true
         row.addArrangedSubview(label)
-        row.addArrangedSubview(slider)
+        row.addArrangedSubview(knob)
         row.addArrangedSubview(value)
         return row
     }
@@ -291,10 +529,10 @@ final class LevelerPanel: NSBox {
 
 final class DuckingPanel: NSBox {
     let enabled = NSButton(checkboxWithTitle: "Enable xPilot priority ducking", target: nil, action: nil)
-    let threshold = NSSlider(value: -46, minValue: -70, maxValue: -20, target: nil, action: nil)
-    let depth = NSSlider(value: -24, minValue: -36, maxValue: -6, target: nil, action: nil)
-    let attack = NSSlider(value: 4, minValue: 1, maxValue: 80, target: nil, action: nil)
-    let release = NSSlider(value: 180, minValue: 60, maxValue: 600, target: nil, action: nil)
+    let threshold = KnobControl(value: -46, minValue: -70, maxValue: -20, unit: "dB")
+    let depth = KnobControl(value: -24, minValue: -36, maxValue: -6, unit: "dB")
+    let attack = KnobControl(value: 4, minValue: 1, maxValue: 80, unit: "ms")
+    let release = KnobControl(value: 180, minValue: 60, maxValue: 600, unit: "ms")
     let thresholdValue = NSTextField(labelWithString: "")
     let depthValue = NSTextField(labelWithString: "")
     let attackValue = NSTextField(labelWithString: "")
@@ -335,7 +573,7 @@ final class DuckingPanel: NSBox {
 
     var controls: [NSControl] { [enabled, threshold, depth, attack, release] }
 
-    func controlRow(_ title: String, _ slider: NSSlider, _ value: NSTextField) -> NSView {
+    func controlRow(_ title: String, _ knob: KnobControl, _ value: NSTextField) -> NSView {
         let row = NSStackView()
         row.orientation = .horizontal
         row.spacing = 8
@@ -343,13 +581,14 @@ final class DuckingPanel: NSBox {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 130).isActive = true
-        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        knob.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        knob.heightAnchor.constraint(equalToConstant: 78).isActive = true
         value.alignment = .right
         value.textColor = .secondaryLabelColor
         value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         value.widthAnchor.constraint(equalToConstant: 72).isActive = true
         row.addArrangedSubview(label)
-        row.addArrangedSubview(slider)
+        row.addArrangedSubview(knob)
         row.addArrangedSubview(value)
         return row
     }
@@ -387,7 +626,7 @@ final class AppController: NSViewController {
     var inputDevices: [Device] = []
     var outputDevices: [Device] = []
 
-    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 700)) }
+    override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 1240, height: 820)) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -433,7 +672,7 @@ final class AppController: NSViewController {
 
         tabs.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(tabs)
-        tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 530).isActive = true
+        tabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 650).isActive = true
         addTab("Audio", audioView())
         addTab("Leveling", levelerView())
         updateTabItem = addTab("Updates", updatesView())
@@ -491,7 +730,7 @@ final class AppController: NSViewController {
         row.spacing = 12
         for block in [discord, xpilot, output] {
             block.translatesAutoresizingMaskIntoConstraints = false
-            block.widthAnchor.constraint(equalToConstant: 300).isActive = true
+            block.widthAnchor.constraint(equalToConstant: 360).isActive = true
             row.addArrangedSubview(block)
         }
         stack.addArrangedSubview(row)
@@ -677,7 +916,7 @@ final class AppController: NSViewController {
     }
 
     func fallbackHelp() -> String { "# BlackHole Routing\n\n## Signal Flow\n1. Discord Output -> BlackHole 2ch\n2. xPilot Headset/Speaker -> BlackHole 16ch\n3. AudioDaBitch Output -> headphones or audio interface\n\n! Do not use a Multi-Output device with headphones, otherwise audio bypasses the limiter.\n\n## Audio MIDI Setup\nSet all involved devices to 48,000 Hz." }
-    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.12\n- Automatic update checks on launch\n- Startup device refresh retry\n- Saved devices restored by ID and name\n- Saved controls restored automatically" }
+    func fallbackChangelog() -> String { "# AudioDaBitch Changelog\n\n## 0.5.13\n- Native analog VU meters\n- Rotary knobs for audio, leveling and ducking\n- Mouse drag and hover scroll-wheel control\n- Audio engine behavior unchanged" }
 
     @objc func loadDevices() { refreshAll() }
     @objc func startAudio() { EngineManager.shared.post("/start", body: [:]) { _ in self.pollState() } }
@@ -1064,7 +1303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AudioDaBitch \(ADBVersion) started")
         let vc = AppController()
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.center()
         window.title = "AudioDaBitch"
         window.contentViewController = vc

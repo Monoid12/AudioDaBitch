@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.13
+
+- Added native analog VU meters for Discord, xPilot and Output.
+- Replaced audio, leveling and ducking sliders with lightweight native rotary knobs.
+- Knobs support mouse dragging and scroll-wheel adjustment while hovered.
+- Enlarged the main window so the analog controls stay readable.
+- Kept the audio engine path unchanged apart from the version bump.
+
 ## 0.5.12
 
 - Update checks now run automatically on launch and retry if GitHub is not reachable immediately.

@@ -1,5 +1,13 @@
 # AudioDaBitch Changelog
 
+## 0.5.13 - Analog VU and Rotary Controls
+
+* Discord, xPilot and Output now use native analog VU meters.
+* Audio, leveling and ducking controls now use lightweight rotary knobs.
+* Knobs can be adjusted by dragging with the mouse.
+* Knobs also react to the scroll wheel while the pointer is over them.
+* The audio engine remains unchanged apart from the version bump.
+
 ## 0.5.12 - Automatic Updates and Device Restore
 
 * Update checks run automatically on launch and retry if GitHub is not reachable immediately.
