@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.14
+
+- Fixed analog VU geometry so scale labels and needles stay inside the beige meter face.
+- Moved the live dB readout into the meter face.
+- Kept the audio engine behavior unchanged apart from the version bump.
+
 ## 0.5.13
 
 - Added native analog VU meters for Discord, xPilot and Output.

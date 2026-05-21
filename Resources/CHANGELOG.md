@@ -1,5 +1,12 @@
 # AudioDaBitch Changelog
 
+## 0.5.14 - VU Face Geometry Fix
+
+* VU scale labels now stay inside the beige meter face.
+* VU needles now pivot and move inside the beige meter face.
+* Live dB readouts are shown inside the meter face.
+* Audio engine behavior remains unchanged apart from the version bump.
+
 ## 0.5.13 - Analog VU and Rotary Controls
 
 * Discord, xPilot and Output now use native analog VU meters.
